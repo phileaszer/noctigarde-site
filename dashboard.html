@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Noctigarde | Dashboard</title>
+  <meta name="description" content="Dashboard sécurisé de gestion des serveurs Noctigarde.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#05070c">
+  <link rel="icon" href="assets/noctigarde-mark.png" type="image/png">
+  <script>
+    (() => {
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('sentinel-site-theme') === 'western' ? 'western' : 'sentinel';
+      } catch (error) {
+        document.documentElement.dataset.theme = 'sentinel';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20261020-1">
+</head>
+<body class="dashboard-body">
+  <header class="site-header dashboard-header">
+    <a class="brand" href="index.html" aria-label="Noctigarde">
+      <img src="assets/noctigarde-mark.png" alt="" width="38" height="38">
+      <span>Noctigarde</span>
+    </a>
+    <nav class="nav-links" aria-label="Navigation dashboard">
+      <a href="index.html">Site public</a>
+      <a href="pourquoi.html">Pourquoi ?</a>
+      <a href="installation.html">Installation</a>
+      <a href="commandes.html">Commandes</a>
+      <a href="securite.html">Sécurité</a>
+      <a href="nouveautes.html">Nouveautés</a>
+      <a href="statut.html">Statut</a>
+      <a href="membre.html">Mon espace</a>
+    </nav>
+    <div class="header-actions">
+      <button class="theme-toggle button button-small button-ghost" type="button" data-theme-toggle data-i18n-ignore="true" aria-label="Changer de style">Western</button>
+      <button class="button button-small button-ghost" type="button" data-logout hidden>Déconnexion</button>
+      <a class="button button-small button-ghost" href="https://dashboard.noctigarde.fr/auth/login" data-login data-discord-login hidden>Connexion</a>
+      <a class="button button-small" href="https://discord.com/oauth2/authorize?client_id=1511426423376842922&permissions=1099780189206&integration_type=0&scope=bot+applications.commands" data-public-invite>Inviter Noctigarde</a>
+    </div>
+  </header>
+
+  <main class="dashboard-shell" data-public-dashboard hidden>
+    <section class="dashboard-hero guide-hero">
+      <div>
+        <p class="eyebrow">Dashboard Noctigarde</p>
+        <h1>Pas besoin de s’y connaître.</h1>
+        <p>Si la connexion web ne s’affiche pas, tu peux quand même installer et utiliser Noctigarde depuis Discord.</p>
+      </div>
+      <div class="status-card">
+        <span class="status-pill">Guide actif</span>
+        <strong>Connexion web indisponible</strong>
+        <p>Tu peux quand même installer, configurer et utiliser Noctigarde sans quitter Discord.</p>
+      </div>
+    </section>
+
+    <section class="dashboard-guide-grid">
+      <article class="dashboard-panel guide-card">
+        <p class="eyebrow">Démarrage rapide</p>
+        <h2>Configurer Noctigarde dans Discord</h2>
+        <ol class="plain-steps">
+          <li><strong>Invite Noctigarde</strong><span>Ajoute le bot sur ton Discord avec le bouton ci-dessous.</span></li>
+          <li><strong>Choisis la langue</strong><span>Tape <code>/config-langue</code>, puis sélectionne Français ou English.</span></li>
+          <li><strong>Choisis le rôle de service</strong><span>Tape <code>/config-role</code> et choisis le rôle qui sera donné aux agents en service.</span></li>
+          <li><strong>Choisis le salon de logs</strong><span>Tape <code>/config-logs</code> avec l'ID du salon de logs.</span></li>
+          <li><strong>Ajoute les rôles autorisés</strong><span>Tape <code>/config-permissions</code> pour définir qui peut gérer Noctigarde.</span></li>
+          <li><strong>Publie le panneau</strong><span>Tape <code>!service-panel</code> dans le salon où les membres doivent pointer.</span></li>
+        </ol>
+        <div class="hero-actions">
+          <a class="button" href="https://discord.com/oauth2/authorize?client_id=1511426423376842922&permissions=1099780189206&integration_type=0&scope=bot+applications.commands">Inviter Noctigarde</a>
+          <a class="button button-ghost" href="commandes.html">Voir les commandes</a>
+          <a class="action-link" href="https://discord.gg/jzPqcUdVns" target="_blank" rel="noopener noreferrer">Serveur support</a>
+        </div>
+      </article>
+
+      <aside class="dashboard-panel guide-card">
+        <p class="eyebrow">À copier</p>
+        <h2>Commandes utiles</h2>
+        <div class="copy-list">
+          <button type="button" data-copy="/aide"><code>/aide</code><span>Voir le tutoriel du bot</span></button>
+          <button type="button" data-copy="/config-langue"><code>/config-langue</code><span>Choisir FR ou EN</span></button>
+          <button type="button" data-copy="/config-role"><code>/config-role</code><span>Définir le rôle de service</span></button>
+          <button type="button" data-copy="/config-logs"><code>/config-logs</code><span>Définir le salon de logs</span></button>
+          <button type="button" data-copy="/config-permissions"><code>/config-permissions</code><span>Donner les droits au staff</span></button>
+          <button type="button" data-copy="!service-panel"><code>!service-panel</code><span>Afficher le panneau de service</span></button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="dashboard-panel demo-dashboard">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Aperçu démo</p>
+          <h2>À quoi ressemble le dashboard ?</h2>
+          <p class="muted">Exemple sans données réelles : Noctigarde regroupe l’état du serveur, les services, les tickets, la modération et l’historique au même endroit.</p>
+        </div>
+        <span class="status-badge is-ready">Exemple</span>
+      </div>
+      <div class="today-grid">
+        <article class="today-card is-ready"><span>Configuration</span><strong>Prête</strong><p>Langue, logs et accès staff en place.</p></article>
+        <article class="today-card is-ready"><span>Service</span><strong>3</strong><p>agents actuellement en service.</p></article>
+        <article class="today-card is-ready"><span>Tickets</span><strong>2</strong><p>dossiers ouverts à traiter.</p></article>
+        <article class="today-card is-warning"><span>Salaires</span><strong>4</strong><p>salaires encore à verser cette semaine.</p></article>
+      </div>
+      <div class="demo-dashboard-grid">
+        <article>
+          <span>Recherche ID</span>
+          <strong>Heures, sanctions, tickets et salaires</strong>
+          <p>Un staff peut retrouver rapidement ce qui concerne une personne avec son ID Discord.</p>
+        </article>
+        <article>
+          <span>Erreurs guidées</span>
+          <strong>La correction exacte est indiquée</strong>
+          <p>Si une action bloque, Noctigarde indique la permission ou le rôle à vérifier.</p>
+        </article>
+        <article>
+          <span>Régie claire</span>
+          <strong>Chaque outil reste à sa place</strong>
+          <p>Les membres, les responsables et la fondation voient uniquement les commandes qui les concernent.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="dashboard-panel help-band">
+      <div>
+        <p class="eyebrow">Pourquoi cette page ?</p>
+        <h2>Discord reste toujours utilisable.</h2>
+        <p>Si le dashboard ne charge pas, Noctigarde continue de fonctionner sur ton serveur. Cette page te donne les commandes essentielles à utiliser tout de suite.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="button button-ghost" href="installation.html">Guide d’installation</a>
+        <a class="button button-ghost" href="securite.html">Comprendre les permissions</a>
+        <a class="action-link" href="https://discord.gg/jzPqcUdVns" target="_blank" rel="noopener noreferrer">Serveur support</a>
+      </div>
+    </section>
+  </main>
+
+  <main class="dashboard-shell" data-live-dashboard>
+    <section class="dashboard-hero">
+      <div>
+        <p class="eyebrow">Dashboard Noctigarde</p>
+        <h1>Gérer le serveur</h1>
+        <p>Configuration, service, modération, annonces et historique depuis le même endroit.</p>
+        <div class="dashboard-quick-actions">
+          <button class="button" type="button" data-open-guild-drawer aria-controls="guild-drawer" aria-expanded="false">Choisir un serveur</button>
+        </div>
+      </div>
+      <div class="dashboard-user" data-user-card>
+        <span>Non connecté</span>
+      </div>
+    </section>
+
+    <section class="dashboard-workspace">
+      <div class="guild-drawer-backdrop" data-close-guild-drawer hidden></div>
+      <aside class="dashboard-panel guild-panel guild-drawer" id="guild-drawer" data-guild-drawer aria-label="Choix du Discord" aria-hidden="true">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Serveurs</p>
+            <h2>Choix du Discord</h2>
+          </div>
+          <button class="drawer-close" type="button" data-close-guild-drawer aria-label="Fermer le volet">X</button>
+        </div>
+        <div class="guild-list" data-guild-list>
+          <p class="muted">Connecte-toi pour afficher tes serveurs.</p>
+        </div>
+      </aside>
+
+      <section class="dashboard-main dashboard-main-full" data-dashboard-main>
+        <div class="empty-state">
+          <img src="assets/noctigarde-mark.png" alt="">
+          <h2>Sélectionne un serveur</h2>
+          <p>Utilise le bouton « Choisir un serveur » en haut de la page pour afficher tes Discords et sélectionner celui à gérer.</p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast-stack" data-toasts></div>
+  <script src="theme.js?v=20261020-1"></script>
+  <script src="i18n.js?v=20261020-1"></script>
+  <script src="auth.js?v=20260924-4"></script>
+  <script src="dashboard.js?v=20261020-1"></script>
+</body>
+</html>

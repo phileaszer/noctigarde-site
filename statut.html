@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Statut Noctigarde | Noctigarde</title>
+  <meta name="description" content="État du bot Noctigarde, du dashboard, des maintenances et incidents connus.">
+  <meta name="robots" content="index, follow">
+  <link rel="icon" href="assets/noctigarde-mark.png" type="image/png">
+  <script>
+    (() => {
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('sentinel-site-theme') === 'western' ? 'western' : 'sentinel';
+      } catch (error) {
+        document.documentElement.dataset.theme = 'sentinel';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20261020-1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Noctigarde"><img src="assets/noctigarde-mark.png" alt=""><span>Noctigarde</span></a>
+    <nav class="nav-links" aria-label="Navigation principale">
+      <a href="pourquoi.html">Pourquoi ?</a>
+      <a href="fonctionnalites.html">Fonctionnalités</a>
+      <a href="commandes.html">Commandes</a>
+      <a href="securite.html">Sécurité</a>
+      <a href="installation.html">Installation</a>
+      <a href="nouveautes.html">Nouveautés</a>
+      <a href="statut.html" aria-current="page">Statut</a>
+    </nav>
+    <div class="header-actions">
+      <button class="theme-toggle button button-small button-ghost" type="button" data-theme-toggle data-i18n-ignore="true" aria-label="Changer de style">Western</button>
+      <a class="button button-small" href="https://discord.com/oauth2/authorize?client_id=1511426423376842922&permissions=1099780189206&integration_type=0&scope=bot+applications.commands">Inviter Noctigarde</a>
+      <a class="button button-ghost button-small" href="https://dashboard.noctigarde.fr/dashboard">Voir le dashboard</a>
+      <a class="header-link" href="https://dashboard.noctigarde.fr/auth/login" data-discord-login>Connexion</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero status-hero">
+      <p class="eyebrow">Statut Noctigarde</p>
+      <h1>Vérifie si Noctigarde répond bien.</h1>
+      <p>Cette page indique si le bot et le dashboard sont en ligne, et s’il y a une maintenance connue.</p>
+    </section>
+
+    <section class="section section-dark">
+      <div class="section-inner">
+        <div class="status-grid">
+          <article class="status-panel" data-status-card="bot">
+            <span class="status-dot" data-status-dot="bot"></span>
+            <p class="eyebrow">Bot Discord</p>
+            <h2 data-status-bot>Vérification...</h2>
+            <p data-status-bot-detail>Connexion au statut en cours.</p>
+          </article>
+          <article class="status-panel" data-status-card="dashboard">
+            <span class="status-dot" data-status-dot="dashboard"></span>
+            <p class="eyebrow">Dashboard web</p>
+            <h2 data-status-dashboard>Vérification...</h2>
+            <p data-status-dashboard-detail>Connexion au statut en cours.</p>
+          </article>
+          <article class="status-panel">
+            <p class="eyebrow">Serveurs connectés</p>
+            <h2 data-status-guilds>En attente</h2>
+            <p>Nombre de serveurs où Noctigarde est actuellement présent.</p>
+          </article>
+        </div>
+
+        <div class="status-detail-grid">
+          <article class="dashboard-panel">
+            <p class="eyebrow">Incidents connus</p>
+            <h2>Problèmes connus</h2>
+            <div data-status-incidents>
+              <p class="muted">Aucun incident connu pour le moment.</p>
+            </div>
+          </article>
+          <article class="dashboard-panel">
+            <p class="eyebrow">Maintenance</p>
+            <h2>Prévu</h2>
+            <div data-status-maintenance>
+              <p class="muted">Aucune maintenance annoncée actuellement.</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="support-banner">
+          <div>
+            <p class="eyebrow">Besoin d'aide ?</p>
+            <h2>Le serveur support reste le plus simple.</h2>
+            <p>Si tout semble en ligne mais que ton serveur a encore un souci, viens sur le support avec l’ID du serveur et une capture.</p>
+          </div>
+          <a class="action-link" href="https://discord.gg/jzPqcUdVns" target="_blank" rel="noopener noreferrer">Serveur support</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Noctigarde</span>
+    <div><a href="pourquoi.html">Pourquoi Noctigarde ?</a><a href="installation.html">Installation</a><a href="https://discord.gg/jzPqcUdVns" target="_blank" rel="noopener noreferrer">Serveur support</a></div>
+  </footer>
+  <script src="theme.js?v=20261020-1"></script>
+  <script src="i18n.js?v=20261020-1"></script>
+  <script src="auth.js?v=20260924-4"></script>
+  <script src="status.js?v=20261004-1"></script>
+</body>
+</html>

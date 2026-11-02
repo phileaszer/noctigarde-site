@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commandes | Noctigarde</title>
+  <meta name="description" content="Commandes Noctigarde pour le service, la modération, les annonces et les dossiers Discord.">
+  <meta name="robots" content="index, follow">
+  <link rel="icon" href="assets/noctigarde-mark.png" type="image/png">
+  <script>
+    (() => {
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('sentinel-site-theme') === 'western' ? 'western' : 'sentinel';
+      } catch (error) {
+        document.documentElement.dataset.theme = 'sentinel';
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=20261020-1">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html"><img src="assets/noctigarde-mark.png" alt=""><span>Noctigarde</span></a>
+    <nav class="nav-links">
+      <a href="pourquoi.html">Pourquoi ?</a>
+      <a href="fonctionnalites.html">Fonctionnalités</a>
+      <a href="commandes.html" aria-current="page">Commandes</a>
+      <a href="securite.html">Sécurité</a>
+      <a href="installation.html">Installation</a>
+      <a href="nouveautes.html">Nouveautés</a>
+      <a href="statut.html">Statut</a>
+    </nav>
+    <div class="header-actions">
+      <button class="theme-toggle button button-small button-ghost" type="button" data-theme-toggle data-i18n-ignore="true" aria-label="Changer de style">Western</button>
+      <a class="button button-small" href="https://discord.com/oauth2/authorize?client_id=1511426423376842922&permissions=1099780189206&integration_type=0&scope=bot+applications.commands">Inviter Noctigarde</a>
+      <a class="button button-ghost button-small" href="https://dashboard.noctigarde.fr/dashboard">Voir le dashboard</a>
+      <a class="header-link" href="https://dashboard.noctigarde.fr/auth/login" data-discord-login>Connexion</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <p class="eyebrow">Commandes</p>
+      <h1>Les commandes Noctigarde, classées par usage.</h1>
+      <p>Retrouve les commandes disponibles pour gérer le service, la sécurité et les demandes de ta communauté.</p>
+    </section>
+
+    <section class="section section-dark">
+      <div class="section-inner command-page-grid">
+        <article class="command-column">
+          <h2>Service</h2>
+          <ul>
+            <li><code>/mes-heures</code><span>Voir ses heures</span></li>
+            <li><code>/historique-service</code><span>Consulter l’historique complet d’un membre</span></li>
+            <li><code>/en-service</code><span>Voir les agents actifs</span></li>
+            <li><code>/top-service</code><span>Voir le classement général</span></li>
+            <li><code>/heures</code><span>Consulter le registre d’un membre</span></li>
+            <li><code>/top-semaine</code><span>Voir le classement des sept derniers jours</span></li>
+            <li><code>/resume-service</code><span>Afficher le bilan complet</span></li>
+            <li><code>/paie-semaine</code><span>Voir les salaires estimés et leur état versé/à verser</span></li>
+            <li><code>/paie-archive</code><span>Archiver les salaires de la semaine</span></li>
+            <li><code>/reset-heures</code><span>Réinitialiser une personne, même par ID</span></li>
+            <li><code>/reset-heures-all</code><span>Préparer la remise à zéro générale sécurisée</span></li>
+          </ul>
+        </article>
+
+        <article class="command-column">
+          <h2>Configuration</h2>
+          <ul>
+            <li><code>/config-langue</code><span>Choisir FR ou EN</span></li>
+            <li><code>/config-role</code><span>Définir le rôle de service</span></li>
+            <li><code>/config-autorole</code><span>Définir le rôle donné automatiquement à l’arrivée</span></li>
+            <li><code>/config-logs</code><span>Définir le salon de logs par ID</span></li>
+            <li><code>/config-statut</code><span>Choisir séparément le panneau d’état, le salon des nouveautés, son test et le rôle à prévenir</span></li>
+            <li><code>/config-paie</code><span>Définir le montant horaire global ou propre à un rôle</span></li>
+            <li><code>/config-permissions</code><span>Définir les rôles autorisés</span></li>
+            <li><code>/config-voir</code><span>Vérifier la configuration</span></li>
+            <li><code>/paie-marquer</code><span>Marquer un salaire comme versé ou à verser</span></li>
+            <li><code>/paie-ajustement</code><span>Ajouter une prime, une retenue ou une correction RP</span></li>
+            <li><code>/aide</code><span>Afficher le tutoriel dans Discord</span></li>
+            <li><code>/dashboard</code><span>Ouvrir le dashboard web</span></li>
+            <li><code>/support</code><span>Recevoir les liens officiels et le serveur support</span></li>
+          </ul>
+        </article>
+
+        <article class="command-column">
+          <h2>Modération</h2>
+          <ul>
+            <li><code>/avertir</code><span>Ajouter un avertissement</span></li>
+            <li><code>/timeout</code><span>Timeout temporaire</span></li>
+            <li><code>/fin-timeout</code><span>Retirer un timeout</span></li>
+            <li><code>/expulser</code><span>Expulser un membre présent</span></li>
+            <li><code>/bannir</code><span>Bannir par membre ou ID</span></li>
+            <li><code>/purge messages</code><span>Archiver puis supprimer un nombre précis de messages récents</span></li>
+            <li><code>/purge tout</code><span>Archiver puis recréer le salon vide en une opération</span></li>
+            <li><code>/sanctions</code><span>Voir les dossiers disciplinaires</span></li>
+            <li><code>/cas</code><span>Consulter un dossier précis</span></li>
+            <li><code>/modifier-cas</code><span>Corriger la raison d’un dossier</span></li>
+            <li><code>/supprimer-cas</code><span>Retirer un dossier invalide</span></li>
+            <li><code>/unwarn</code><span>Annuler un avertissement précis</span></li>
+            <li><code>/profil-mod</code><span>Voir le profil disciplinaire complet</span></li>
+            <li><code>/tempban</code><span>Bannir temporairement</span></li>
+            <li><code>/unban</code><span>Lever un bannissement par ID</span></li>
+            <li><code>/lock · /unlock · /slowmode</code><span>Gérer rapidement un salon</span></li>
+            <li><code>/embed</code><span>Créer, modifier ou supprimer une annonce Noctigarde</span></li>
+          </ul>
+        </article>
+
+        <article class="command-column">
+          <h2>Dossiers Noctigarde</h2>
+          <p>Dans Noctigarde, un dossier est simplement un ticket privé : chaque demande ouvre un salon dédié avec l’équipe autorisée.</p>
+          <ul>
+            <li><code>/dossier-panel</code><span>Publier le bureau d’accueil du serveur</span></li>
+            <li><code>Boutons</code><span>Support, signalement, recrutement, partenariat ou autre</span></li>
+            <li><code>Formulaire</code><span>Demander le sujet et la description avant d’ouvrir le salon</span></li>
+            <li><code>Statuts</code><span>Ouvert, en cours, en attente, résolu ou fermé</span></li>
+            <li><code>/dossier-roles</code><span>Choisir les rôles capables de prendre en charge, corriger le statut et clôturer un ticket</span></li>
+            <li><code>/dossier-prendre</code><span>Se déclarer responsable du dossier actuel</span></li>
+            <li><code>/dossier-statut</code><span>Corriger le statut visible du dossier actuel</span></li>
+            <li><code>/dossier-fermer</code><span>Clôturer le dossier actuel et envoyer le compte rendu</span></li>
+            <li><code>/dossier-reouvrir</code><span>Réouvrir un dossier encore conservé</span></li>
+            <li><code>/dossier-ajouter</code><span>Ajouter un intervenant</span></li>
+            <li><code>/dossier-retirer</code><span>Retirer un intervenant</span></li>
+            <li><code>/dossier-compte-rendu</code><span>Générer le compte rendu</span></li>
+            <li><code>Capacité</code><span>Panneaux, dossiers ouverts et historique sans quota de formule</span></li>
+          </ul>
+        </article>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Noctigarde</span>
+    <div><a href="fonctionnalites.html">Fonctionnalités</a><a href="https://dashboard.noctigarde.fr/dashboard">Dashboard</a><a href="https://discord.gg/jzPqcUdVns" target="_blank" rel="noopener noreferrer">Serveur support</a></div>
+  </footer>
+  <script src="theme.js?v=20261020-1"></script>
+  <script src="i18n.js?v=20261020-1"></script>
+  <script src="auth.js?v=20260924-4"></script>
+</body>
+</html>

@@ -1,0 +1,7592 @@
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+let currentUser = null;
+let guilds = [];
+let selectedGuildId = null;
+let currentState = null;
+let currentSettings = null;
+let activeDashboardTab = 'overview';
+const activeDashboardSubtabs = {};
+let tooltipHost = null;
+let tooltipPinned = false;
+let tooltipElement = null;
+let auditScope = 'server';
+let auditFilters = {};
+let moderationFilters = {};
+let expandedModerationCaseId = null;
+let payrollHistoryFilters = { query: '', status: 'all' };
+let expandedPayrollArchiveWeek = null;
+let selectedUserProfile = null;
+let dossierFilters = {};
+let expandedDossierId = null;
+let dossierViewMode = 'board';
+let dossierArchiveMatches = [];
+let dossierArchiveItemIds = [];
+let creatorOverview = null;
+let creatorOverviewLoading = false;
+let founderMfaCode = '';
+let founderMfaSetup = null;
+let canViewCreatorOverview = false;
+let currentSiteAccess = { role: 'user', isFounder: false, isStaff: false, canViewSitePanel: false, canManageSystem: false, canManageSiteStaff: false };
+let dashboardHydrating = false;
+let selectedGuildPreview = null;
+let csrfToken = null;
+let activeUploadPreviewUrls = new Set();
+const LAST_GUILD_STORAGE_KEY = 'sentinel-dashboard-last-guild-id';
+const GUILD_PREVIEW_CACHE_PREFIX = 'sentinel-dashboard-guild-preview';
+const PROFILE_STORAGE_KEY = 'sentinel-discord-profile';
+const CUSTOM_EMBED_UPLOAD_MAX_BYTES = 8 * 1024 * 1024;
+const CUSTOM_EMBED_UPLOAD_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const SERVER_PRESETS = [
+  {
+    id: 'standard',
+    eyebrow: 'Base',
+    title: 'Standard',
+    summary: 'Une configuration simple pour démarrer Noctigarde sans spécialiser le serveur.',
+    advice: [
+      'Choisis un rôle de service uniquement si ton serveur suit des heures.',
+      'Garde un salon de logs lisible pour retrouver les actions importantes.',
+      'Ajoute seulement les rôles staff qui doivent vraiment gérer Noctigarde.'
+    ]
+  },
+  {
+    id: 'rp-modern',
+    eyebrow: 'RP moderne',
+    title: 'Police / EMS / Staff RP',
+    summary: 'Pensé pour les serveurs GTA, RP moderne ou équipes avec prises de service régulières.',
+    advice: [
+      'Utilise un rôle de service clair, par exemple En service ou Agent actif.',
+      'Publie le panneau de service dans un salon visible par les agents.',
+      'Garde les tickets pour support, signalement, recrutement et plaintes RP.'
+    ]
+  },
+  {
+    id: 'western',
+    eyebrow: 'RP western',
+    title: 'Époque 1900 / Western',
+    summary: 'Adapté aux serveurs Red Dead ou RP plus immersifs, avec un vocabulaire plus sobre.',
+    advice: [
+      'Prévois des tickets pour plaintes, recrutements, demandes RP et signalements.',
+      'Utilise le registre des salaires si les heures servent à rémunérer les métiers ou services.',
+      'Le thème western du site peut être activé séparément selon la préférence de chacun.'
+    ]
+  },
+  {
+    id: 'staff',
+    eyebrow: 'Équipe',
+    title: 'Staff et modération',
+    summary: 'Pour un serveur qui veut surtout encadrer les sanctions, les logs et les demandes membres.',
+    advice: [
+      'Configure les rôles autorisés avant de donner l’accès au dashboard.',
+      'Vérifie que Noctigarde peut bannir, timeout, expulser et purger.',
+      'Utilise les tickets pour centraliser les demandes et les signalements.'
+    ]
+  },
+  {
+    id: 'community',
+    eyebrow: 'Communauté',
+    title: 'Communauté Discord',
+    summary: 'Pour un serveur généraliste qui veut rester simple, clair et facile à administrer.',
+    advice: [
+      'Commence avec les logs, les rôles staff et les tickets de support.',
+      'Active l’auto-rôle seulement si tu as un rôle d’arrivée utile.',
+      'Garde la modération par ID pour pouvoir agir même si une personne quitte le serveur.'
+    ]
+  }
+];
+const SERVER_PRESET_MAP = new Map(SERVER_PRESETS.map((preset) => [preset.id, preset]));
+
+const publicDashboardHost = window.location.pathname.endsWith('/dashboard.html')
+  || window.location.hostname.endsWith('github.io');
+
+function lastGuildStorageKeys() {
+  const keys = [];
+
+  if (currentUser?.id) {
+    keys.push(`${LAST_GUILD_STORAGE_KEY}:${currentUser.id}`);
+  }
+
+  keys.push(LAST_GUILD_STORAGE_KEY);
+  return keys;
+}
+
+function readStoredProfileUser() {
+  try {
+    const payload = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || 'null');
+    const user = payload?.user;
+
+    if (!user || !/^\d{17,20}$/.test(String(user.id || ''))) {
+      return null;
+    }
+
+    return user;
+  } catch (error) {
+    return null;
+  }
+}
+
+function readStoredLastGuildId() {
+  try {
+    for (const key of lastGuildStorageKeys()) {
+      const value = localStorage.getItem(key);
+
+      if (/^\d{17,20}$/.test(String(value || ''))) {
+        return value;
+      }
+    }
+  } catch (error) {
+    return null;
+  }
+
+  return null;
+}
+
+function guildPreviewCacheKey(userId, guildId) {
+  if (!/^\d{17,20}$/.test(String(userId || '')) || !/^\d{17,20}$/.test(String(guildId || ''))) {
+    return null;
+  }
+
+  return `${GUILD_PREVIEW_CACHE_PREFIX}:${userId}:${guildId}`;
+}
+
+function readCachedGuildPreview(userId, guildId) {
+  const key = guildPreviewCacheKey(userId, guildId);
+
+  if (!key) {
+    return null;
+  }
+
+  try {
+    const preview = JSON.parse(localStorage.getItem(key) || 'null');
+
+    if (!preview || preview.id !== guildId || !preview.name) {
+      return null;
+    }
+
+    return preview;
+  } catch (error) {
+    return null;
+  }
+}
+
+function storeCachedGuildPreview(guild) {
+  const key = guildPreviewCacheKey(currentUser?.id, guild?.id);
+
+  if (!key) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      id: guild.id,
+      name: guild.name,
+      icon: guild.icon || null,
+      advanced: Boolean(guild.advanced),
+      cachedAt: new Date().toISOString()
+    }));
+  } catch (error) {
+    // Local cache only stores the server identity for instant display.
+  }
+}
+
+function rememberCurrentGuildPreview() {
+  if (!currentState?.guild) {
+    return;
+  }
+
+  selectedGuildPreview = {
+    ...currentState.guild,
+    advanced: Boolean(currentState.advanced)
+  };
+  storeCachedGuildPreview(selectedGuildPreview);
+}
+
+function removeCachedGuildPreview(userId, guildId) {
+  const key = guildPreviewCacheKey(userId, guildId);
+
+  if (!key) {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    // Storage can be blocked by browser settings.
+  }
+}
+
+function showCachedDashboardPreview() {
+  const storedUser = readStoredProfileUser();
+
+  if (storedUser && !currentUser) {
+    currentUser = storedUser;
+    renderUser();
+  }
+
+  const guildId = readStoredLastGuildId();
+
+  if (!currentUser?.id || !guildId) {
+    return false;
+  }
+
+  selectedGuildId = guildId;
+  dashboardHydrating = true;
+  selectedGuildPreview = readCachedGuildPreview(currentUser.id, guildId);
+  currentState = null;
+  renderDashboard();
+  return true;
+}
+
+function storeLastGuildId(guildId) {
+  if (!/^\d{17,20}$/.test(String(guildId || ''))) {
+    return;
+  }
+
+  currentSettings = {
+    ...(currentSettings || {}),
+    lastGuildId: guildId
+  };
+
+  try {
+    for (const key of lastGuildStorageKeys()) {
+      localStorage.setItem(key, guildId);
+    }
+  } catch (error) {
+    // Some browsers block local storage; the backend setting remains the source of truth.
+  }
+
+  window.NoctigardeAuth?.saveSettings?.({ lastGuildId: guildId });
+}
+
+function forgetLastGuildId(guildId = null) {
+  const storedGuildId = readStoredLastGuildId();
+
+  if (!guildId || guildId === storedGuildId) {
+    try {
+      for (const key of lastGuildStorageKeys()) {
+        localStorage.removeItem(key);
+      }
+    } catch (error) {
+      // Storage can be blocked by browser settings.
+    }
+  }
+
+  if (!guildId || currentSettings?.lastGuildId === guildId) {
+    currentSettings = {
+      ...(currentSettings || {}),
+      lastGuildId: null
+    };
+    window.NoctigardeAuth?.saveSettings?.({ lastGuildId: null });
+  }
+}
+
+function getRestorableGuildIds() {
+  const queryGuildId = new URLSearchParams(window.location.search).get('guild');
+  const candidates = [
+    /^\d{17,20}$/.test(String(queryGuildId || '')) ? queryGuildId : null,
+    readStoredLastGuildId(),
+    currentSettings?.lastGuildId
+  ].filter((guildId, index, list) => guildId && list.indexOf(guildId) === index);
+
+  return candidates.filter((guildId) => (
+    guilds.some((guild) => guild.id === guildId && guild.installed)
+  ));
+}
+
+function getRestorableGuildId() {
+  return getRestorableGuildIds()[0] || null;
+}
+
+function renderDashboardLoadingState(preview = selectedGuildPreview) {
+  const serverName = preview?.name || 'ton dernier serveur';
+  const previewIcon = safeDiscordImageUrl(preview?.icon);
+  const serverIcon = previewIcon
+    ? `<img src="${escapeHtml(previewIcon)}" alt="">`
+    : '<span class="guild-fallback">S</span>';
+
+  return `
+    <div class="empty-state dashboard-loading-state">
+      <img src="assets/noctigarde-mark.png" alt="">
+      <span class="status-badge is-site">Dernier serveur</span>
+      <h2>${escapeHtml(serverName)}</h2>
+      <div class="dashboard-loading-server">${serverIcon}<strong>Réouverture du dashboard</strong></div>
+      <p>Noctigarde remet ton dernier serveur en place et vérifie tes accès Discord.</p>
+      <div class="dashboard-loading-bar" aria-hidden="true"><span></span></div>
+      <button class="button button-small button-ghost" type="button" data-open-guild-drawer aria-controls="guild-drawer" aria-expanded="false">Changer de serveur</button>
+    </div>
+  `;
+}
+
+async function api(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const timeoutMs = Number(options.timeoutMs) || (method === 'GET' ? 15000 : 45000);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const {
+    timeoutMs: ignoredTimeout,
+    signal: ignoredSignal,
+    headers: optionHeaders,
+    ...fetchOptions
+  } = options;
+  let response;
+
+  try {
+    response = await fetch(path, {
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? { 'X-Noctigarde-CSRF': csrfToken } : {}),
+        ...(optionHeaders || {})
+      },
+      ...fetchOptions,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Noctigarde met trop de temps à répondre. Réessaie dans quelques instants.');
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (payload.csrfToken) {
+    csrfToken = payload.csrfToken;
+  }
+
+  if (!response.ok || payload.ok === false) {
+    const message = payload.error || `Erreur ${response.status}`;
+    const error = new Error(message);
+    error.payload = payload;
+    error.status = response.status;
+
+    if (payload.code === 'REAUTH_REQUIRED' && typeof payload.reauthUrl === 'string') {
+      window.location.assign(payload.reauthUrl);
+    }
+
+    throw error;
+  }
+
+  return payload;
+}
+
+function dashboardErrorMessage(input) {
+  const language = document.documentElement.lang === 'en' ? 'en' : 'fr';
+  const payload = input && typeof input === 'object' ? input.payload || null : null;
+  const message = typeof input === 'string' ? input : input?.message;
+  const payloadFix = typeof payload?.fix === 'string' && payload.fix.trim()
+    ? payload.fix.trim()
+    : null;
+
+  if (language === 'en') {
+    const firstFix = currentState?.diagnostics?.fixes?.[0] || null;
+
+    const translated = {
+      'Login required.': 'Log in with Discord to use the dashboard.',
+      'Noctigarde is not installed on this server.': 'Invite Noctigarde to this server before using the dashboard.',
+      'You do not have access to this server dashboard.': 'You do not have access to this server dashboard.',
+      'You do not have permission to manage Noctigarde on this server.': 'You do not have an allowed role to manage Noctigarde on this server.',
+      'You do not have permission to manage Noctigarde dossiers on this server.': 'You do not have a responsible role to manage Noctigarde tickets on this server.',
+      'You do not have permission for this moderation action.': 'Your Discord role cannot perform this moderation action.',
+      'Noctigarde does not have the required Discord permission.': 'Noctigarde does not have the required Discord permission.',
+      'Founder access is required.': 'Only the founder can use this command.',
+      'Site staff access is required.': 'This panel is reserved for the founder and site staff.',
+      'Invalid site staff action.': 'Invalid site staff action.',
+      'Founder access cannot be managed as staff.': 'The founder account already has full access.',
+      'Recent Discord login is required.': 'Reconnect with Discord before changing protected access.',
+      'Discord session verification failed.': 'Your Discord session must be verified again.',
+      'Discord user not found.': 'This Discord account could not be found.',
+      'Bot accounts cannot receive site staff access.': 'A bot account cannot receive site staff access.',
+      'Site staff must be a member of this Discord server to perform actions.': 'Join this Discord server before performing an action.',
+      'A Noctigarde Discord staff role is required for site staff access.': 'A staff role on the Noctigarde Discord server is also required.',
+      'The Noctigarde Discord server is unavailable.': 'The Noctigarde Discord server is unavailable.',
+      'No Noctigarde Discord staff role is configured.': 'No staff role is configured on the Noctigarde Discord server.',
+      'The user must join the Noctigarde Discord server before receiving site staff access.': 'This person must join the Noctigarde Discord server first.',
+      'The user must have a Noctigarde Discord staff role before receiving site staff access.': 'Give this person a staff role on the Noctigarde Discord server first.',
+      'Invalid Discord user ID.': 'The Discord ID is not valid.',
+      'Text channel not found.': 'Text channel not found.',
+      'Role not found.': 'Discord role not found.',
+      'Invalid timeout duration.': 'Invalid timeout duration. Example: 10m, 2h, 7d.',
+      'Invalid temporary ban duration.': 'Invalid temporary ban duration.',
+      'Invalid slowmode duration.': 'Invalid slowmode duration.',
+      'Invalid hourly rate.': 'Invalid hourly rate.',
+      'Invalid payroll adjustment.': 'Invalid payroll adjustment.',
+      'Invalid payroll week.': 'The payroll week is invalid.',
+      'Invalid payroll status.': 'The payroll status is invalid.',
+      'Payroll line not found.': 'This payroll line no longer exists.',
+      'Invalid message ID.': 'Invalid message ID.',
+      'No service role is configured.': 'No duty role is configured.',
+      'This user must be in the server to start duty.': 'This person must be in the server to start duty from the dashboard.',
+      'This user is already on duty.': 'This person is already on duty.',
+      'This user is not on duty.': 'This person is not on duty.',
+      'Invalid server profile.': 'Invalid server profile.',
+      'Case not found.': 'No case was found with this ID.',
+      'Missing dossier type.': 'Ticket type is missing.',
+      'Category not found.': 'Discord category not found.',
+      'Noctigarde cannot send this embed in the selected channel.': 'Noctigarde cannot send this embed in the selected channel.',
+      'Noctigarde cannot use the selected channel.': 'Noctigarde cannot use the selected channel.',
+      'Invalid local image. Use a PNG, JPG, WebP, or GIF image.': 'Invalid local image.',
+      'Local image too large. Keep the total under 8 MB per embed.': 'Local image too large.',
+      'Payload too large.': 'Uploaded image is too large.',
+      'Discord refused the action.': 'Discord refused the action.',
+      'Discord ban not found.': 'No Discord ban was found for this ID.',
+      'No embed field provided.': 'Choose at least one embed field to update.',
+      'Noctigarde embed not found.': 'No Noctigarde embed was found with this ID in the selected channel.',
+      'Unknown moderation action.': 'Unknown moderation action.',
+      'Automod word is invalid.': 'Enter a forbidden word with at least 2 characters.',
+      'This channel is not a Noctigarde dossier.': 'This channel is not a Noctigarde ticket.'
+    };
+
+    const resolutionByMessage = {
+      'You do not have permission for this moderation action.': 'Check that your Discord role has the right permission, or add your role to Noctigarde allowed roles.',
+      'Noctigarde does not have the required Discord permission.': firstFix || 'Open the permissions diagnostic and fix the permission shown there.',
+      'Invalid Discord user ID.': 'Copy the full numeric Discord ID, not the username.',
+      'Text channel not found.': 'Choose a text channel that Noctigarde can access.',
+      'Role not found.': 'Choose a Discord role that still exists on the server.',
+      'No service role is configured.': 'Open the assistant and choose the role given to members on duty.',
+      'This user must be in the server to start duty.': 'Check the Discord ID and make sure this person is still in the server.',
+      'This user is already on duty.': 'Use “End duty” if you want to stop the current session.',
+      'This user is not on duty.': 'No active duty session was found for this ID on this server.',
+      'Invalid server profile.': 'Choose one of the profiles shown in the assistant.',
+      'Invalid hourly rate.': 'Enter a positive hourly amount, for example 500 or 1250.',
+      'Invalid payroll adjustment.': 'Enter a Discord ID, a type, a positive amount, and a short reason.',
+      'Invalid payroll week.': 'Open the archive again and retry from its own payment line.',
+      'Invalid payroll status.': 'Refresh the dashboard and use the button on the payroll line.',
+      'Payroll line not found.': 'Refresh the dashboard and choose an existing current or archived payroll line.',
+      'Invalid message ID.': 'Copy the full numeric ID of the message sent by Noctigarde.',
+      'Case not found.': 'Check the case ID in the latest cases table.',
+      'Category not found.': 'Choose a Discord category that still exists.',
+      'Noctigarde cannot send this embed in the selected channel.': firstFix || 'Allow Noctigarde to view the channel and send messages there.',
+      'Noctigarde cannot use the selected channel.': 'Fix the permissions of the selected channel, then try again.',
+      'Invalid local image. Use a PNG, JPG, WebP, or GIF image.': 'Choose a valid PNG, JPG, WebP, or GIF image.',
+      'Local image too large. Keep the total under 8 MB per embed.': 'Use a lighter image, up to 8 MB total per embed.',
+      'Payload too large.': 'Use a lighter image, up to 8 MB total per embed.',
+      'Discord refused the action.': 'Open the permissions diagnostic, fix the red item, then try again.',
+      'Discord ban not found.': 'Check the full Discord ID and make sure this user is still banned.',
+      'No embed field provided.': 'Change at least the title, description, color, image, thumbnail, or footer.',
+      'Noctigarde embed not found.': 'Choose the channel where the embed is posted, then paste the message ID. If the Discord message was deleted, its slot will be freed.',
+      'This channel is not a Noctigarde dossier.': 'Choose an open Noctigarde ticket channel.',
+      'Founder access is required.': 'Only the founder can change this access.',
+      'Site staff access is required.': 'Ask the founder to add your Discord account as site staff.',
+      'Invalid site staff action.': 'Choose add or remove.',
+      'Founder access cannot be managed as staff.': 'The founder account already has full access.',
+      'Recent Discord login is required.': 'Reconnect with Discord, then retry the protected action.',
+      'Discord session verification failed.': 'Reconnect with Discord to verify your identity.',
+      'A Noctigarde Discord staff role is required for site staff access.': 'Ask the founder to assign you a staff role on the Noctigarde Discord server.'
+    };
+    const base = translated[message] || message || 'Action failed.';
+    const resolution = payloadFix || resolutionByMessage[message];
+
+    return resolution ? `${base}\nFix: ${resolution}` : base;
+  }
+
+  const translated = {
+    'Login required.': 'Connecte-toi avec Discord pour utiliser le dashboard.',
+    'Noctigarde is not installed on this server.': 'Noctigarde doit être invité comme bot sur ce serveur avant d’utiliser le dashboard.',
+    'You do not have access to this server dashboard.': 'Tu n’as pas accès au dashboard de ce serveur.',
+    'You do not have permission to manage Noctigarde on this server.': 'Tu n’as pas de rôle autorisé pour gérer Noctigarde sur ce serveur.',
+    'You do not have permission to manage Noctigarde dossiers on this server.': 'Tu n’as pas de rôle responsable pour gérer les tickets Noctigarde sur ce serveur.',
+    'You do not have permission for this moderation action.': 'Tu n’as pas la permission Discord nécessaire pour cette sanction.',
+    'Noctigarde does not have the required Discord permission.': 'Noctigarde n’a pas la permission Discord nécessaire pour faire cette action.',
+    'Founder access is required.': 'Seul le fondateur peut faire cette action.',
+    'Site staff access is required.': 'Ce panneau est réservé au fondateur et au staff site.',
+    'Invalid site staff action.': 'Action staff site invalide.',
+    'Founder access cannot be managed as staff.': 'Le compte fondateur possède déjà l’accès complet.',
+    'Recent Discord login is required.': 'Une reconnexion Discord récente est nécessaire.',
+    'Discord session verification failed.': 'Ta session Discord doit être vérifiée à nouveau.',
+    'Discord user not found.': 'Ce compte Discord est introuvable.',
+    'Bot accounts cannot receive site staff access.': 'Un compte bot ne peut pas recevoir le grade staff du site.',
+    'Site staff must be a member of this Discord server to perform actions.': 'Tu dois être membre de ce serveur Discord pour y effectuer une action.',
+    'A Noctigarde Discord staff role is required for site staff access.': 'Un rôle staff sur le Discord Noctigarde est aussi obligatoire.',
+    'The Noctigarde Discord server is unavailable.': 'Le serveur Discord Noctigarde est temporairement indisponible.',
+    'No Noctigarde Discord staff role is configured.': 'Aucun rôle staff n’est configuré sur le Discord Noctigarde.',
+    'The user must join the Noctigarde Discord server before receiving site staff access.': 'Cette personne doit d’abord rejoindre le Discord Noctigarde.',
+    'The user must have a Noctigarde Discord staff role before receiving site staff access.': 'Donne d’abord un rôle staff à cette personne sur le Discord Noctigarde.',
+    'Invalid Discord user ID.': 'L’ID Discord indiqué n’est pas valide.',
+    'Text channel not found.': 'Salon textuel introuvable.',
+    'Role not found.': 'Rôle Discord introuvable.',
+    'Invalid timeout duration.': 'Durée de timeout invalide. Exemple : 10m, 2h, 7d.',
+    'Invalid temporary ban duration.': 'Durée de ban temporaire invalide.',
+    'Invalid slowmode duration.': 'Durée de mode lent invalide.',
+    'Invalid hourly rate.': 'Montant horaire invalide.',
+    'Invalid payroll adjustment.': 'Ajustement de salaire invalide.',
+    'Invalid payroll week.': 'La semaine de salaire indiquée est invalide.',
+    'Invalid payroll status.': 'L’état du salaire indiqué est invalide.',
+    'Payroll line not found.': 'Cette ligne de salaire n’existe plus.',
+    'Invalid message ID.': 'ID de message invalide.',
+    'No service role is configured.': 'Aucun rôle de service n’est configuré.',
+    'This user must be in the server to start duty.': 'Cette personne doit être présente sur le serveur pour prendre son service depuis le dashboard.',
+    'This user is already on duty.': 'Cette personne est déjà en service.',
+    'This user is not on duty.': 'Cette personne n’est pas en service.',
+    'Invalid server profile.': 'Profil serveur invalide.',
+    'Case not found.': 'Aucun cas trouvé avec cet ID.',
+    'Missing dossier type.': 'Type de dossier manquant.',
+    'Category not found.': 'Catégorie Discord introuvable.',
+    'Noctigarde cannot send this embed in the selected channel.': 'Noctigarde ne peut pas envoyer cet embed dans le salon choisi.',
+    'Noctigarde cannot use the selected channel.': 'Noctigarde ne peut pas utiliser le salon choisi.',
+    'Invalid local image. Use a PNG, JPG, WebP, or GIF image.': 'Image locale invalide.',
+    'Local image too large. Keep the total under 8 MB per embed.': 'Image locale trop lourde.',
+    'Payload too large.': 'Image envoyée trop lourde.',
+    'Discord refused the action.': 'Discord a refusé l’action.',
+    'Discord ban not found.': 'Aucun bannissement Discord n’a été trouvé pour cet ID.',
+    'No embed field provided.': 'Indique au moins un champ à modifier.',
+    'Noctigarde embed not found.': 'Aucun embed Noctigarde n’a été trouvé avec cet ID dans le salon choisi.',
+    'Unknown moderation action.': 'Action de modération inconnue.',
+    'Automod word is invalid.': 'Indique un mot interdit d’au moins 2 caractères.',
+    'This channel is not a Noctigarde dossier.': 'Ce salon n’est pas un dossier Noctigarde.'
+  };
+
+  const base = translated[message] || message || 'Action impossible pour le moment.';
+  const diagnostics = currentState?.diagnostics;
+  const firstFix = diagnostics?.fixes?.[0] || null;
+  const resolutionByMessage = {
+    'You do not have permission for this moderation action.': 'Vérifie que ton rôle Discord a la permission nécessaire, ou ajoute ton rôle dans les rôles autorisés Noctigarde.',
+    'Noctigarde does not have the required Discord permission.': firstFix || 'Ouvre le diagnostic permissions du dashboard et corrige la permission indiquée.',
+    'Invalid Discord user ID.': 'Copie l’ID Discord numérique complet de la personne, pas son pseudo.',
+    'Text channel not found.': 'Choisis un salon textuel accessible par Noctigarde.',
+    'Role not found.': 'Choisis un rôle Discord toujours présent sur le serveur.',
+    'No service role is configured.': 'Va dans l’assistant et choisis le rôle donné aux membres en service.',
+    'This user must be in the server to start duty.': 'Vérifie l’ID Discord et assure-toi que la personne est encore sur ce serveur.',
+    'This user is already on duty.': 'Utilise plutôt “Fin de poste” si tu veux arrêter sa session actuelle.',
+    'This user is not on duty.': 'Aucune session active n’est trouvée pour cet ID sur ce serveur.',
+    'Invalid server profile.': 'Choisis un profil proposé dans l’assistant.',
+    'Invalid hourly rate.': 'Indique un montant horaire positif, par exemple 500 ou 1250.',
+    'Invalid payroll adjustment.': 'Indique un ID Discord, un type, un montant positif et une raison courte.',
+    'Invalid payroll week.': 'Rouvre l’archive puis relance l’action depuis la ligne de salaire.',
+    'Invalid payroll status.': 'Actualise le dashboard et utilise le bouton présent sur la ligne de salaire.',
+    'Payroll line not found.': 'Actualise le dashboard et choisis une ligne de salaire actuelle ou archivée.',
+    'Invalid message ID.': 'Copie l’ID numérique complet du message envoyé par Noctigarde.',
+    'Case not found.': 'Vérifie l’ID du cas dans le tableau des derniers dossiers.',
+    'Category not found.': 'Choisis une catégorie Discord encore présente sur le serveur.',
+    'Noctigarde cannot send this embed in the selected channel.': firstFix || 'Autorise Noctigarde à voir le salon et à y envoyer des messages.',
+    'Noctigarde cannot use the selected channel.': 'Corrige les permissions du salon choisi, puis réessaie.',
+    'Invalid local image. Use a PNG, JPG, WebP, or GIF image.': 'Choisis une image PNG, JPG, WebP ou GIF valide.',
+    'Local image too large. Keep the total under 8 MB per embed.': 'Utilise une image plus légère, 8 Mo maximum au total par embed.',
+    'Payload too large.': 'Utilise une image plus légère, 8 Mo maximum au total par embed.',
+    'Discord refused the action.': 'Ouvre le diagnostic permissions, corrige le point rouge, puis réessaie.',
+    'Discord ban not found.': 'Vérifie l’ID Discord complet et assure-toi que cette personne est encore bannie.',
+    'No embed field provided.': 'Modifie au moins le titre, la description, la couleur, l’image, la miniature ou le footer.',
+    'Noctigarde embed not found.': 'Choisis le salon où se trouve l’embed, puis colle l’ID du message. Si le message a été supprimé sur Discord, son emplacement sera libéré.',
+    'This channel is not a Noctigarde dossier.': 'Choisis un salon de ticket Noctigarde ouvert.',
+    'Founder access is required.': 'Connecte-toi avec le compte Discord fondateur pour modifier cet accès.',
+    'Site staff access is required.': 'Demande au fondateur d’ajouter ton compte Discord au staff site.',
+    'Invalid site staff action.': 'Choisis ajouter ou retirer.',
+    'Founder access cannot be managed as staff.': 'Le compte fondateur n’a pas besoin d’être ajouté comme staff.',
+    'Recent Discord login is required.': 'Reconnecte-toi avec Discord puis relance l’action protégée.',
+    'Discord session verification failed.': 'Reconnecte-toi avec Discord pour confirmer ton identité.',
+    'A Noctigarde Discord staff role is required for site staff access.': 'Demande au fondateur de t’attribuer un rôle staff sur le Discord Noctigarde.'
+  };
+  const resolution = payloadFix || resolutionByMessage[message];
+
+  return resolution ? `${base}\nÀ faire : ${resolution}` : base;
+}
+
+function toast(message, type = 'success') {
+  const stack = $('[data-toasts]');
+  const item = document.createElement('div');
+  item.className = `toast toast-${type}`;
+  item.textContent = message;
+  stack.appendChild(item);
+  setTimeout(() => item.remove(), 5200);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function safeDiscordImageUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && ['cdn.discordapp.com', 'media.discordapp.net'].includes(url.hostname)
+      ? url.toString()
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function safeExternalUrl(value, allowedHosts = []) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && allowedHosts.includes(url.hostname)
+      ? url.toString()
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function optionList(items, selectedId = null, placeholder = 'Choisir') {
+  const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
+
+  for (const item of items) {
+    const selected = item.id === selectedId ? ' selected' : '';
+    options.push(`<option value="${item.id}"${selected}>${escapeHtml(item.name)}</option>`);
+  }
+
+  return options.join('');
+}
+
+function formData(form) {
+  const data = {};
+
+  for (const [key, value] of new FormData(form).entries()) {
+    if (typeof File !== 'undefined' && value instanceof File) {
+      continue;
+    }
+
+    data[key] = value;
+  }
+
+  return data;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.addEventListener('load', () => resolve(String(reader.result || '')));
+    reader.addEventListener('error', () => reject(new Error('Lecture de l’image impossible.')));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function customEmbedUploadFromInput(input, label) {
+  const file = input?.files?.[0];
+
+  if (!file || !file.name) {
+    return null;
+  }
+
+  if (!CUSTOM_EMBED_UPLOAD_TYPES.has(file.type)) {
+    throw new Error(`${label} : choisis une image PNG, JPG, WebP ou GIF.`);
+  }
+
+  if (file.size > CUSTOM_EMBED_UPLOAD_MAX_BYTES) {
+    throw new Error(`${label} : image trop lourde. Maximum 8 Mo par embed.`);
+  }
+
+  return {
+    name: file.name,
+    type: file.type,
+    size: file.size,
+    dataUrl: await readFileAsDataUrl(file)
+  };
+}
+
+async function actionFormData(form, action) {
+  const data = formData(form);
+
+  if (action === 'save-scheduled-announcement' && data.nextRunAt) {
+    const localDate = new Date(data.nextRunAt);
+    if (!Number.isNaN(localDate.getTime())) {
+      data.nextRunAt = localDate.toISOString();
+    }
+  }
+
+  if (action === 'community-create-shift') {
+    for (const key of ['startsAt', 'endsAt']) {
+      const value = new Date(data[key]);
+      if (!Number.isNaN(value.getTime())) data[key] = value.toISOString();
+    }
+  }
+
+  if (action === 'community-review-application' && data.interviewAt) {
+    const interviewAt = new Date(data.interviewAt);
+    if (!Number.isNaN(interviewAt.getTime())) data.interviewAt = interviewAt.toISOString();
+  }
+
+  if (action === 'custom-embed-create' || action === 'custom-embed-edit') {
+    const imageUpload = await customEmbedUploadFromInput(form.elements.imageFile, 'Image principale');
+    const thumbnailUpload = await customEmbedUploadFromInput(form.elements.thumbnailFile, 'Miniature');
+    const totalUploadSize = (imageUpload?.size || 0) + (thumbnailUpload?.size || 0);
+
+    if (totalUploadSize > CUSTOM_EMBED_UPLOAD_MAX_BYTES) {
+      throw new Error('Images trop lourdes. Maximum 8 Mo au total par embed.');
+    }
+
+    if (imageUpload) {
+      data.imageUpload = imageUpload;
+    }
+
+    if (thumbnailUpload) {
+      data.thumbnailUpload = thumbnailUpload;
+    }
+  }
+
+  return data;
+}
+
+function fileUploadControl(name, title, emptyText, actionText = 'Choisir') {
+  return `
+          <label class="file-upload-control">
+            <input class="file-upload-input" data-file-upload name="${escapeHtml(name)}" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="${escapeHtml(title)}">
+            <span class="file-upload-visual">
+              <span class="file-upload-symbol" aria-hidden="true">
+                <img data-file-upload-preview alt="">
+              </span>
+              <span class="file-upload-text">
+                <strong>${escapeHtml(title)}</strong>
+                <small data-file-upload-name data-empty-label="${escapeHtml(emptyText)}">${escapeHtml(emptyText)}</small>
+              </span>
+              <span class="file-upload-action">${escapeHtml(actionText)}</span>
+            </span>
+          </label>`;
+}
+
+function revokeUploadPreviewUrls() {
+  for (const url of activeUploadPreviewUrls) {
+    URL.revokeObjectURL(url);
+  }
+
+  activeUploadPreviewUrls = new Set();
+}
+
+function updateFileUploadName(input) {
+  const control = input.closest('.file-upload-control');
+  const label = control ? $('[data-file-upload-name]', control) : null;
+  const preview = control ? $('[data-file-upload-preview]', control) : null;
+  const file = input.files?.[0] || null;
+
+  if (!control || !label) {
+    return;
+  }
+
+  if (control.dataset.previewUrl) {
+    URL.revokeObjectURL(control.dataset.previewUrl);
+    activeUploadPreviewUrls.delete(control.dataset.previewUrl);
+    delete control.dataset.previewUrl;
+  }
+
+  if (preview) {
+    preview.removeAttribute('src');
+  }
+
+  if (file?.type?.startsWith('image/') && preview) {
+    const previewUrl = URL.createObjectURL(file);
+    control.dataset.previewUrl = previewUrl;
+    activeUploadPreviewUrls.add(previewUrl);
+    preview.src = previewUrl;
+  }
+
+  label.textContent = file?.name || label.dataset.emptyLabel || 'Aucune image sélectionnée';
+  control.classList.toggle('has-file', Boolean(file?.name));
+}
+
+function setLoading(button, isLoading) {
+  if (!button) return;
+  button.disabled = isLoading;
+  button.dataset.originalText ||= button.textContent;
+  button.textContent = isLoading ? 'Envoi…' : button.dataset.originalText;
+}
+
+function showPublicDashboardGuide() {
+  const liveDashboard = $('[data-live-dashboard]');
+  const publicDashboard = $('[data-public-dashboard]');
+  const login = $('[data-login]');
+  const logout = $('[data-logout]');
+  const publicInvite = $('[data-public-invite]');
+
+  if (liveDashboard) {
+    liveDashboard.hidden = true;
+  }
+
+  if (publicDashboard) {
+    publicDashboard.hidden = false;
+  }
+
+  if (login) {
+    login.hidden = false;
+  }
+
+  if (logout) {
+    logout.hidden = true;
+  }
+
+  if (publicInvite) {
+    publicInvite.hidden = false;
+  }
+
+  $$('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const value = button.dataset.copy;
+
+      try {
+        await navigator.clipboard.writeText(value);
+        toast(`Commande copiee : ${value}`);
+      } catch (error) {
+        toast(value, 'success');
+      }
+    });
+  });
+}
+
+function setGuildDrawerOpen(isOpen) {
+  const drawer = $('[data-guild-drawer]');
+  const backdrop = $('.guild-drawer-backdrop');
+
+  if (!drawer) return;
+
+  drawer.classList.toggle('is-open', isOpen);
+  drawer.setAttribute('aria-hidden', String(!isOpen));
+
+  if (backdrop) {
+    backdrop.hidden = true;
+  }
+
+  $$('[data-open-guild-drawer]').forEach((button) => {
+    button.setAttribute('aria-expanded', String(isOpen));
+  });
+
+  document.body.classList.toggle('drawer-open', isOpen);
+}
+
+function getTooltipElement() {
+  if (!tooltipElement) {
+    tooltipElement = document.createElement('div');
+    tooltipElement.id = 'sentinel-dashboard-tooltip';
+    tooltipElement.className = 'sentinel-tooltip';
+    tooltipElement.setAttribute('role', 'tooltip');
+    tooltipElement.hidden = true;
+    document.body.appendChild(tooltipElement);
+  }
+
+  return tooltipElement;
+}
+
+function positionTooltip(host) {
+  if (!host || !tooltipElement || tooltipElement.hidden) {
+    return;
+  }
+
+  const margin = 14;
+  const gap = 12;
+  const hostRect = host.getBoundingClientRect();
+  const tooltipRect = tooltipElement.getBoundingClientRect();
+  let left = hostRect.left + (hostRect.width / 2) - (tooltipRect.width / 2);
+  let top = hostRect.bottom + gap;
+  let isAbove = false;
+
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+
+  if (top + tooltipRect.height + margin > window.innerHeight) {
+    top = hostRect.top - tooltipRect.height - gap;
+    isAbove = true;
+  }
+
+  if (top < margin) {
+    top = margin;
+    isAbove = false;
+  }
+
+  tooltipElement.style.left = `${left}px`;
+  tooltipElement.style.top = `${top}px`;
+  tooltipElement.classList.toggle('is-above', isAbove);
+}
+
+function showTooltip(host, { pinned = false } = {}) {
+  const text = host?.getAttribute('data-tooltip');
+
+  if (!host || !text) {
+    return;
+  }
+
+  const tooltip = getTooltipElement();
+  tooltipHost = host;
+  tooltipPinned = pinned;
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  host.setAttribute('aria-describedby', tooltip.id);
+  positionTooltip(host);
+  tooltip.classList.add('is-visible');
+}
+
+function hideTooltip({ force = false } = {}) {
+  if (tooltipPinned && !force) {
+    return;
+  }
+
+  tooltipPinned = false;
+
+  if (tooltipHost) {
+    tooltipHost.removeAttribute('aria-describedby');
+  }
+
+  tooltipHost = null;
+
+  if (!tooltipElement) {
+    return;
+  }
+
+  tooltipElement.classList.remove('is-visible', 'is-above');
+  tooltipElement.hidden = true;
+}
+
+function renderUser() {
+  const card = $('[data-user-card]');
+  const login = $('[data-login]');
+  const logout = $('[data-logout]');
+
+  if (!currentUser) {
+    card.innerHTML = '<span>Non connecté</span>';
+    login.hidden = false;
+    logout.hidden = true;
+    return;
+  }
+
+  const avatarUrl = safeDiscordImageUrl(currentUser.avatar);
+  card.innerHTML = `
+    ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : ''}
+    <span>${escapeHtml(currentUser.globalName || currentUser.username)}</span>
+  `;
+  login.hidden = true;
+  logout.hidden = false;
+}
+
+function renderGuilds() {
+  const list = $('[data-guild-list]');
+
+  if (!currentUser) {
+    list.innerHTML = '<p class="muted">Connecte-toi pour afficher tes serveurs.</p>';
+    return;
+  }
+
+  if (guilds.length === 0) {
+    list.innerHTML = '<p class="muted">Aucun serveur gérable trouvé. Vérifie tes permissions Discord.</p>';
+    return;
+  }
+
+  list.innerHTML = guilds.map((guild) => `
+    <article class="guild-card ${guild.id === selectedGuildId ? 'is-active' : ''}">
+      <button type="button" data-select-guild="${escapeHtml(guild.id)}">
+        ${safeDiscordImageUrl(guild.icon) ? `<img src="${escapeHtml(safeDiscordImageUrl(guild.icon))}" alt="">` : '<span class="guild-fallback">S</span>'}
+        <span>
+          <strong>${escapeHtml(guild.name)}</strong>
+          <small>${guild.installed ? 'Bot installé' : 'Autorisation requise'}</small>
+        </span>
+      </button>
+      ${guild.installed ? '' : `<a class="button button-small" href="${escapeHtml(safeExternalUrl(guild.inviteUrl, ['discord.com']) || '#')}" target="_blank" rel="noopener">Autoriser</a>`}
+    </article>
+  `).join('');
+}
+
+function statusBadge(label, isReady, tone = '') {
+  return `<span class="status-badge ${isReady ? 'is-ready' : 'is-warning'} ${tone}">${escapeHtml(label)}</span>`;
+}
+
+function metricCards(state) {
+  const metrics = [
+    ['Agents', state.summary.registeredUsers, 'Enregistrés'],
+    ['En service', state.summary.activeCount, 'Actifs maintenant'],
+    ['Total', state.summary.totalServiceTime, 'Cumul serveur'],
+    ['Semaine', state.summary.weeklyServiceTime, '7 derniers jours']
+  ];
+
+  return `
+    <div class="dashboard-metrics dashboard-kpis">
+      ${metrics.map(([label, value, detail]) => `
+        <article class="dashboard-kpi">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+          <small>${escapeHtml(detail)}</small>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function resolveRole(state, roleId) {
+  if (!roleId) return null;
+  return (state.roles || []).find((role) => role.id === roleId) || null;
+}
+
+function resolveChannel(state, channelId) {
+  if (!channelId) return null;
+  return (state.channels || []).find((channel) => channel.id === channelId) || null;
+}
+
+function commandRoles(state) {
+  return (state.config.commandRoleIds || [])
+    .map((roleId) => resolveRole(state, roleId))
+    .filter(Boolean);
+}
+
+function currentServerPreset(state) {
+  return SERVER_PRESET_MAP.get(state.config.serverPreset) || SERVER_PRESET_MAP.get('standard');
+}
+
+function dashboardConfigStatus(state) {
+  const serviceRole = resolveRole(state, state.config.serviceRoleId);
+  const autoRole = resolveRole(state, state.config.autoRoleId);
+  const logChannel = resolveChannel(state, state.config.logChannelId);
+  const statusChannel = resolveChannel(state, state.config.statusChannelId);
+  const updatesChannel = resolveChannel(state, state.config.updatesChannelId);
+  const allowedRoles = commandRoles(state);
+  const alerts = [];
+
+  if (!state.config.language) {
+    alerts.push('Choisis la langue du serveur pour que Noctigarde réponde correctement.');
+  }
+
+  if (!state.config.serviceRoleId) {
+    alerts.push('Configure le rôle de service avant de publier le panneau.');
+  } else if (!serviceRole) {
+    alerts.push('Le rôle de service configuré n’existe plus sur Discord.');
+  }
+
+  if (!state.config.logChannelId) {
+    alerts.push('Configure un salon de logs pour suivre les prises de service et les actions importantes.');
+  } else if (!logChannel) {
+    alerts.push('Le salon de logs configuré n’existe plus ou n’est plus textuel.');
+  }
+
+  if (!state.config.updatesChannelId) {
+    alerts.push('Choisis le salon qui recevra les nouveautés officielles de Noctigarde.');
+  } else if (!updatesChannel) {
+    alerts.push('Le salon des nouveautés configuré n’existe plus ou n’est plus textuel.');
+  }
+
+  if (updatesChannel && !state.config.statusUpdatesEnabled) {
+    alerts.push('Active les nouveautés officielles pour terminer l’installation.');
+  }
+
+  if (allowedRoles.length === 0) {
+    alerts.push('Ajoute au moins un rôle autorisé pour déléguer la gestion de Noctigarde au staff.');
+  }
+
+  return {
+    serviceRole,
+    autoRole,
+    logChannel,
+    statusChannel,
+    updatesChannel,
+    allowedRoles,
+    alerts,
+    ready: alerts.length === 0,
+    completedSteps: [
+      Boolean(state.config.language),
+      Boolean(serviceRole),
+      Boolean(logChannel),
+      allowedRoles.length > 0,
+      Boolean(updatesChannel && state.config.statusUpdatesEnabled)
+    ].filter(Boolean).length
+  };
+}
+
+function statusText(isReady) {
+  return isReady ? 'OK' : 'À faire';
+}
+
+function configStatusCards(state) {
+  const status = dashboardConfigStatus(state);
+  const languageLabel = state.config.language === 'en' ? 'English' : 'Français';
+  const preset = currentServerPreset(state);
+
+  const rows = [
+    {
+      label: 'Profil serveur',
+      value: preset.title,
+      ready: true
+    },
+    {
+      label: 'Langue du serveur',
+      value: languageLabel,
+      ready: Boolean(state.config.language)
+    },
+    {
+      label: 'Rôle de service',
+      value: status.serviceRole ? `@${status.serviceRole.name}` : 'Non configuré',
+      ready: Boolean(status.serviceRole)
+    },
+    {
+      label: 'Rôle automatique',
+      value: state.config.autoRoleId
+        ? (status.autoRole ? `@${status.autoRole.name}` : 'Rôle supprimé sur Discord')
+        : 'Désactivé',
+      ready: !state.config.autoRoleId || Boolean(status.autoRole)
+    },
+    {
+      label: 'Salon de logs',
+      value: status.logChannel ? `#${status.logChannel.name}` : 'Non configuré',
+      ready: Boolean(status.logChannel)
+    },
+    {
+      label: 'État technique',
+      value: status.statusChannel ? `#${status.statusChannel.name}` : 'Optionnel',
+      ready: true
+    },
+    {
+      label: 'Salon des nouveautés',
+      value: status.updatesChannel ? `#${status.updatesChannel.name}` : 'Non configuré',
+      ready: Boolean(status.updatesChannel && state.config.statusUpdatesEnabled)
+    },
+    {
+      label: 'Rôles autorisés',
+      value: status.allowedRoles.length > 0
+        ? status.allowedRoles.map((role) => `@${role.name}`).join(', ')
+        : 'Aucun rôle',
+      ready: status.allowedRoles.length > 0
+    },
+    {
+      label: 'Agents enregistrés',
+      value: `${state.summary.registeredUsers}`,
+      ready: true
+    },
+    {
+      label: 'État global',
+      value: status.ready ? 'Configuration prête' : `${status.completedSteps}/5 étapes prêtes`,
+      ready: status.ready
+    }
+  ];
+
+  return `
+    <div class="table-shell config-table-shell">
+      <table class="dashboard-table config-table">
+        <thead>
+          <tr>
+            <th>Élément</th>
+            <th>Valeur</th>
+            <th>État</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr class="${row.ready ? 'is-ready' : 'is-warning'}">
+              <td>${escapeHtml(row.label)}</td>
+              <td>${escapeHtml(row.value)}</td>
+              <td>${statusBadge(statusText(row.ready), row.ready)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function getPublicInviteUrl() {
+  return $('[data-public-invite]')?.href || 'https://discord.com/oauth2/authorize?client_id=1511426423376842922&permissions=1099780189206&integration_type=0&scope=bot+applications.commands';
+}
+
+function dossierPermissionAlert(state) {
+  const checks = state.diagnostics?.checks || [];
+  const missingDossierChecks = checks.filter((check) => (
+    ['manageChannels', 'attachFiles'].includes(check.id)
+    && !check.ok
+  ));
+
+  if (missingDossierChecks.length === 0) {
+    return '';
+  }
+
+  return `
+    <div class="dashboard-alert is-warning dossier-permission-alert">
+      <strong>Dossiers Noctigarde à vérifier</strong>
+      <p>Noctigarde n’a pas encore tous les droits nécessaires pour ouvrir les salons privés ou envoyer les comptes rendus.</p>
+      <ul>
+        ${missingDossierChecks.map((check) => `<li>${escapeHtml(check.fix || check.label)}</li>`).join('')}
+      </ul>
+      <p>Si Noctigarde a été invité avant l’ajout des dossiers, réinvite-le avec le lien officiel ou ajoute ces permissions au rôle Noctigarde.</p>
+      <a class="button button-small" href="${escapeHtml(getPublicInviteUrl())}" target="_blank" rel="noopener">Réinviter Noctigarde</a>
+    </div>
+  `;
+}
+
+const DIAGNOSTIC_LABELS = {
+  ban: 'Noctigarde peut bannir',
+  timeout: 'Noctigarde peut timeout',
+  kick: 'Noctigarde peut expulser',
+  purge: 'Noctigarde peut purger',
+  manageChannels: 'Noctigarde peut créer des salons',
+  attachFiles: 'Noctigarde peut joindre des fichiers',
+  manageRoles: 'Noctigarde peut gérer les rôles',
+  autoRole: 'Rôle automatique d’arrivée',
+  serviceRole: 'Rôle de service configuré',
+  roleOrder: 'Rôle Noctigarde trop bas',
+  autoRoleOrder: 'Auto-rôle trop haut',
+  logs: 'Salon de logs accessible'
+};
+
+const DIAGNOSTIC_FIXES = {
+  ban: 'Ajoute la permission “Bannir des membres” au rôle Noctigarde.',
+  timeout: 'Ajoute la permission “Modérer les membres” au rôle Noctigarde.',
+  kick: 'Ajoute la permission “Expulser des membres” au rôle Noctigarde.',
+  purge: 'Ajoute la permission “Gérer les messages” au rôle Noctigarde.',
+  manageChannels: 'Ajoute la permission “Gérer les salons” au rôle Noctigarde.',
+  attachFiles: 'Ajoute la permission “Joindre des fichiers” au rôle Noctigarde pour les comptes rendus.',
+  manageRoles: 'Ajoute la permission “Gérer les rôles” au rôle Noctigarde.',
+  autoRole: 'Choisis un rôle automatique valide, ou désactive cette option.',
+  serviceRole: 'Choisis le rôle de service dans l’assistant de configuration.',
+  roleOrder: 'Place le rôle Noctigarde au-dessus du rôle de service dans les paramètres Discord.',
+  autoRoleOrder: 'Place le rôle Noctigarde au-dessus du rôle automatique d’arrivée dans les paramètres Discord.',
+  logs: 'Autorise Noctigarde à voir et écrire dans le salon de logs.'
+};
+
+const DIAGNOSTIC_TAB_TARGETS = {
+  ban: 'moderation',
+  timeout: 'moderation',
+  kick: 'moderation',
+  purge: 'moderation',
+  manageChannels: 'dossiers',
+  attachFiles: 'dossiers',
+  manageRoles: 'configuration',
+  autoRole: 'moderation',
+  serviceRole: 'setup',
+  roleOrder: 'configuration',
+  autoRoleOrder: 'moderation',
+  logs: 'setup'
+};
+
+const DIAGNOSTIC_AREAS = {
+  ban: 'Permissions',
+  timeout: 'Permissions',
+  kick: 'Permissions',
+  purge: 'Permissions',
+  manageChannels: 'Tickets',
+  attachFiles: 'Tickets',
+  manageRoles: 'Configuration',
+  autoRole: 'Modération',
+  serviceRole: 'Service',
+  roleOrder: 'Configuration',
+  autoRoleOrder: 'Modération',
+  logs: 'Configuration'
+};
+
+function diagnosticLabelText(check) {
+  return DIAGNOSTIC_LABELS[check.id] || check.label || 'Diagnostic';
+}
+
+function diagnosticFixText(check) {
+  return DIAGNOSTIC_FIXES[check.id] || check.fix || 'Ouvre le diagnostic complet pour voir quoi corriger.';
+}
+
+function addResolutionItem(items, item) {
+  if (!item?.title || !item?.detail) {
+    return;
+  }
+
+  items.push({
+    area: item.area || 'Configuration',
+    title: item.title,
+    detail: item.detail,
+    tab: item.tab || 'configuration'
+  });
+}
+
+function dedupeResolutionItems(items) {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    const key = `${item.area}|${item.title}|${item.detail}`.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function dashboardResolutionItems(state) {
+  const status = dashboardConfigStatus(state);
+  const items = [];
+  const coveredChecks = new Set();
+
+  if (!state.config.language) {
+    addResolutionItem(items, {
+      area: 'Configuration',
+      title: 'Choisir la langue',
+      detail: 'Ouvre l’assistant et valide la langue utilisée par ce serveur.',
+      tab: 'setup'
+    });
+  }
+
+  if (!state.config.serviceRoleId) {
+    coveredChecks.add('serviceRole');
+    addResolutionItem(items, {
+      area: 'Service',
+      title: 'Configurer le rôle de service',
+      detail: 'Choisis le rôle ajouté quand un membre prend son service.',
+      tab: 'setup'
+    });
+  } else if (!status.serviceRole) {
+    coveredChecks.add('serviceRole');
+    addResolutionItem(items, {
+      area: 'Service',
+      title: 'Remplacer le rôle de service',
+      detail: 'Le rôle enregistré n’existe plus sur Discord. Choisis un rôle valide.',
+      tab: 'setup'
+    });
+  }
+
+  if (state.config.autoRoleId && !status.autoRole) {
+    coveredChecks.add('autoRole');
+    addResolutionItem(items, {
+      area: 'Modération',
+      title: 'Corriger l’auto-rôle',
+      detail: 'Le rôle automatique d’arrivée enregistré n’existe plus. Choisis un rôle valide ou désactive l’option.',
+      tab: 'moderation'
+    });
+  }
+
+  if (!state.config.logChannelId) {
+    coveredChecks.add('logs');
+    addResolutionItem(items, {
+      area: 'Configuration',
+      title: 'Configurer le salon de logs',
+      detail: 'Choisis le salon où Noctigarde publie les services, sanctions et actions importantes.',
+      tab: 'setup'
+    });
+  } else if (!status.logChannel) {
+    coveredChecks.add('logs');
+    addResolutionItem(items, {
+      area: 'Configuration',
+      title: 'Remplacer le salon de logs',
+      detail: 'Le salon enregistré n’est plus accessible. Choisis un salon textuel valide.',
+      tab: 'setup'
+    });
+  }
+
+  if (!state.config.updatesChannelId) {
+    coveredChecks.add('updatesChannel');
+    addResolutionItem(items, {
+      area: 'Actualités',
+      title: 'Choisir le salon des nouveautés',
+      detail: 'Cette étape permet à ton serveur de recevoir les annonces officielles de Noctigarde.',
+      tab: 'setup'
+    });
+  } else if (!status.updatesChannel) {
+    coveredChecks.add('updatesChannel');
+    addResolutionItem(items, {
+      area: 'Actualités',
+      title: 'Remplacer le salon des nouveautés',
+      detail: 'Le salon enregistré n’est plus accessible. Choisis un salon textuel valide.',
+      tab: 'setup'
+    });
+  } else if (!state.config.statusUpdatesEnabled) {
+    addResolutionItem(items, {
+      area: 'Actualités',
+      title: 'Réactiver les nouveautés Noctigarde',
+      detail: 'Valide à nouveau le salon dans l’assistant pour recevoir les annonces officielles.',
+      tab: 'setup'
+    });
+  }
+
+  if (status.allowedRoles.length === 0) {
+    addResolutionItem(items, {
+      area: 'Configuration',
+      title: 'Ajouter les rôles autorisés',
+      detail: 'Ajoute les rôles staff qui peuvent gérer Noctigarde sans passer par toi.',
+      tab: 'setup'
+    });
+  }
+
+  (state.diagnostics?.checks || [])
+    .filter((check) => !check.ok && !coveredChecks.has(check.id))
+    .forEach((check) => addResolutionItem(items, {
+      area: DIAGNOSTIC_AREAS[check.id] || 'Permissions',
+      title: diagnosticLabelText(check),
+      detail: diagnosticFixText(check),
+      tab: DIAGNOSTIC_TAB_TARGETS[check.id] || 'moderation'
+    }));
+
+  return dedupeResolutionItems(items);
+}
+
+function resolutionAssistant(state) {
+  const items = dashboardResolutionItems(state);
+
+  if (items.length === 0) {
+    return `
+      <div class="dashboard-alert is-ready resolution-assistant">
+        <div class="resolution-heading">
+          <div>
+            <strong>Tout est prêt</strong>
+            <p>Noctigarde peut gérer ce serveur. Garde le diagnostic sous la main si Discord refuse une action.</p>
+          </div>
+          ${statusBadge('Prêt', true)}
+        </div>
+        <button class="button button-small button-ghost" type="button" data-dashboard-tab="moderation">Voir le diagnostic</button>
+      </div>
+    `;
+  }
+
+  const visibleItems = items.slice(0, 5);
+  const hiddenCount = items.length - visibleItems.length;
+
+  return `
+    <div class="dashboard-alert is-warning resolution-assistant">
+      <div class="resolution-heading">
+        <div>
+          <strong>À faire maintenant</strong>
+          <p>Voici les points qui peuvent bloquer Noctigarde. Chaque bouton t’emmène à l’endroit où les régler.</p>
+        </div>
+        ${statusBadge('À vérifier', false)}
+      </div>
+      <div class="resolution-list">
+        ${visibleItems.map((item) => `
+          <div class="resolution-item">
+            <div class="resolution-copy">
+              <span>${escapeHtml(item.area)}</span>
+              <strong>${escapeHtml(item.title)}</strong>
+              <p>${escapeHtml(item.detail)}</p>
+            </div>
+            <button class="button button-small button-ghost" type="button" data-dashboard-tab="${escapeHtml(item.tab)}">Corriger</button>
+          </div>
+        `).join('')}
+      </div>
+      ${hiddenCount > 0 ? '<p class="resolution-more">D’autres points sont visibles dans le diagnostic complet.</p>' : ''}
+    </div>
+  `;
+}
+
+function recentActions(state, limit = 5) {
+  const items = (state.recentActions || state.auditLogs?.items || []).slice(0, limit);
+
+  if (items.length === 0) {
+    return '<p class="muted">Aucune action récente depuis le dashboard.</p>';
+  }
+
+  return `
+    <div class="table-shell">
+      <table class="dashboard-table recent-action-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Action</th>
+            <th>Résumé</th>
+          </tr>
+        </thead>
+        <tbody>
+      ${items.map((item) => `
+          <tr>
+            <td>${escapeHtml(formatAuditDate(item.createdAt))}</td>
+            <td><strong>${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</strong></td>
+            <td>${escapeHtml(item.summary)}</td>
+          </tr>
+      `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function todayOverviewCards(state) {
+  const status = dashboardConfigStatus(state);
+  const alerts = dashboardResolutionItems(state);
+  const lastAction = (state.recentActions || state.auditLogs?.items || [])[0] || null;
+  const payroll = state.payroll || {};
+  const cards = [
+    {
+      eyebrow: 'Configuration',
+      value: status.ready ? 'Prête' : `${status.completedSteps}/5`,
+      detail: status.ready ? 'Les bases sont en place.' : 'L’assistant indique ce qui manque.',
+      ready: status.ready
+    },
+    {
+      eyebrow: 'Service',
+      value: state.summary.activeCount,
+      detail: 'agent(s) actuellement en service.',
+      ready: true
+    },
+    {
+      eyebrow: 'Tickets',
+      value: state.dossiers?.openCount || 0,
+      detail: 'dossier(s) ouverts à traiter.',
+      ready: true
+    },
+    {
+      eyebrow: 'Salaires',
+      value: payroll.totals?.unpaidCount || 0,
+      detail: 'salaire(s) encore à verser cette semaine.',
+      ready: true
+    },
+    {
+      eyebrow: 'Alertes',
+      value: alerts.length,
+      detail: alerts.length ? 'point(s) à corriger.' : 'Aucun blocage visible.',
+      ready: alerts.length === 0
+    },
+    {
+      eyebrow: 'Dernière action',
+      value: lastAction ? formatAuditDate(lastAction.createdAt) : 'Aucune',
+      detail: lastAction ? (AUDIT_ACTION_LABELS[lastAction.action] || lastAction.action) : 'Pas encore d’action récente.',
+      ready: true
+    }
+  ];
+
+  return `
+    <div class="today-grid">
+      ${cards.map((card) => `
+        <article class="today-card ${card.ready ? 'is-ready' : 'is-warning'}">
+          <span>${escapeHtml(card.eyebrow)}</span>
+          <strong>${escapeHtml(card.value)}</strong>
+          <p>${escapeHtml(card.detail)}</p>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function planScopeCards(state) {
+  return `
+    <div class="plan-scope-grid">
+      <article class="plan-scope-card is-free">
+        <span>Noctigarde actif</span>
+        <strong>Les outils essentiels du serveur</strong>
+        <p>Service, salaires, modération, tickets, journaux, dashboard et annonces.</p>
+      </article>
+    </div>
+  `;
+}
+
+function globalLookupPanel(state) {
+  const value = selectedUserProfile?.user?.id || '';
+
+  return `
+    <article class="global-lookup-panel">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Recherche par ID</p>
+          <h2>Retrouver une personne dans l’historique</h2>
+          <p class="muted">Entre un ID Discord pour ouvrir la fiche liée à cette personne : heures, sanctions, tickets, salaire et dernières actions.</p>
+        </div>
+        <span class="status-badge is-site">Historique serveur</span>
+      </div>
+      <form class="global-lookup-form" data-user-lookup>
+        <input name="userId" placeholder="ID Discord" value="${escapeHtml(value)}" required>
+        <button class="button" type="submit">Rechercher</button>
+      </form>
+      ${selectedUserProfile ? userProfilePanel(selectedUserProfile) : '<p class="muted">La recherche reste limitée au serveur sélectionné. Rien n’est affiché publiquement.</p>'}
+    </article>
+  `;
+}
+
+function notificationCenter(state, compact = false) {
+  const items = state.notifications || [];
+  const unread = items.filter(item => !item.read).length;
+
+  return `
+    <article class="notification-center${compact ? ' is-compact' : ''}">
+      <div class="home-block-heading">
+        <div>
+          <p class="eyebrow">Centre de notifications</p>
+          <h3>${unread ? `${escapeHtml(unread)} point(s) à consulter` : 'Aucun point urgent'}</h3>
+        </div>
+        ${compact ? '<button class="button button-small button-ghost" type="button" data-dashboard-tab="operations">Tout voir</button>' : ''}
+      </div>
+      ${items.length ? `
+        <div class="notification-list">
+          ${items.slice(0, compact ? 4 : 20).map(item => `
+            <div class="notification-item is-${escapeHtml(item.severity || 'info')}${item.read ? ' is-read' : ''}">
+              <button type="button" class="notification-main" data-dashboard-tab="${escapeHtml(item.tab || 'overview')}">
+                <strong>${escapeHtml(item.title)}</strong>
+                <span>${escapeHtml(item.detail)}</span>
+              </button>
+              <div class="notification-actions">
+                ${item.read ? '' : `<button class="button button-small button-ghost" type="button" data-notification-key="${escapeHtml(item.key)}" data-notification-action="read">Lu</button>`}
+                <button class="button button-small button-ghost" type="button" data-notification-key="${escapeHtml(item.key)}" data-notification-action="dismiss" aria-label="Retirer cette notification">X</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<p class="muted">Les dossiers en attente, incidents, sauvegardes et échecs d’envoi apparaîtront ici.</p>'}
+    </article>
+  `;
+}
+
+function renderServerHome(state, premiumBadge) {
+  const status = dashboardConfigStatus(state);
+
+  return `
+    <section class="dashboard-panel server-home pro-dashboard-home">
+      <div class="dashboard-command-bar">
+        <div>
+          <p class="eyebrow">Accueil serveur</p>
+          <h2>${escapeHtml(state.guild.name)}</h2>
+        </div>
+        <div class="command-bar-status">
+          ${statusBadge(status.ready ? 'Opérationnel' : `${status.completedSteps}/5 à finaliser`, status.ready)}
+          ${premiumBadge}
+        </div>
+      </div>
+      ${todayOverviewCards(state)}
+      ${notificationCenter(state, true)}
+      ${dashboardPath(state)}
+      ${planScopeCards(state)}
+      <div class="server-home-grid pro-home-grid">
+        <article class="home-block home-block-config">
+          <div class="home-block-heading">
+            <h3>Configuration</h3>
+            <button class="button button-small button-ghost" type="button" data-dashboard-tab="configuration">Ouvrir</button>
+          </div>
+          ${configStatusCards(state)}
+        </article>
+        <article class="home-block">
+          <h3>Alertes</h3>
+          ${resolutionAssistant(state)}
+        </article>
+        <article class="home-block">
+          <div class="home-block-heading">
+            <h3>Dernières actions</h3>
+            <button class="button button-small button-ghost" type="button" data-dashboard-tab="audit">Historique</button>
+          </div>
+          ${recentActions(state)}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function dashboardPath(state) {
+  const status = dashboardConfigStatus(state);
+  const preset = currentServerPreset(state);
+  const items = [
+    {
+      step: '01',
+      title: status.ready ? 'Configuration prête' : 'Finaliser les bases',
+      detail: status.ready
+        ? 'Langue, service, logs, accès staff et salon des nouveautés sont en place.'
+        : 'Commence par l’assistant pour régler la langue, le rôle de service, les logs, les accès staff et le salon des nouveautés.',
+      tab: status.ready ? 'configuration' : 'setup',
+      label: status.ready ? 'Relire' : 'Commencer'
+    },
+    {
+      step: '02',
+      title: 'Gérer les services',
+      detail: 'Suis les agents en service, les heures et les salaires de la semaine.',
+      tab: 'service',
+      label: 'Ouvrir'
+    },
+    {
+      step: '03',
+      title: 'Traiter les tickets',
+      detail: 'Publie le bureau d’accueil et garde les demandes privées au même endroit.',
+      tab: 'dossiers',
+      label: 'Ouvrir'
+    },
+    {
+      step: '04',
+      title: 'Contrôler le serveur',
+      detail: 'Modère par ID, vérifie les permissions et retrouve les actions dans l’historique.',
+      tab: 'moderation',
+      label: 'Ouvrir'
+    }
+  ];
+
+  return `
+    <article class="dashboard-path">
+      <div class="home-block-heading">
+        <div>
+          <p class="eyebrow">Parcours conseillé</p>
+          <h3>${escapeHtml(preset.title)}</h3>
+        </div>
+        <button class="button button-small button-ghost" type="button" data-dashboard-tab="setup">Personnaliser</button>
+      </div>
+      <div class="dashboard-path-grid">
+        ${items.map((item) => `
+          <div class="dashboard-path-card">
+            <span>${escapeHtml(item.step)}</span>
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.detail)}</p>
+            <button class="button button-small button-ghost" type="button" data-dashboard-tab="${escapeHtml(item.tab)}">${escapeHtml(item.label)}</button>
+          </div>
+        `).join('')}
+      </div>
+    </article>
+  `;
+}
+
+function setupStep({ index, title, description, done, current, content }) {
+  return `
+    <article class="setup-step ${done ? 'is-done' : 'is-pending'}">
+      <div class="setup-step-heading">
+        <span class="setup-index">${index}</span>
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(description)}</p>
+          <small>${escapeHtml(current)}</small>
+        </div>
+        <strong>${done ? 'Prêt' : 'À configurer'}</strong>
+      </div>
+      ${content}
+    </article>
+  `;
+}
+
+function serverPresetSelector(state) {
+  const activePreset = currentServerPreset(state);
+
+  return `
+    <article class="server-preset-panel">
+      <div class="panel-mini-heading">
+        <div>
+          <p class="eyebrow">Profil du serveur</p>
+          <h3>Personnaliser les conseils</h3>
+          <p class="muted">Optionnel : choisis le profil le plus proche de ton Discord pour afficher des conseils adaptés, sans remplacer les réglages de base.</p>
+        </div>
+        ${statusBadge(activePreset.title, true)}
+      </div>
+      <div class="server-preset-grid">
+        ${SERVER_PRESETS.map((preset) => {
+          const active = preset.id === activePreset.id;
+
+          return `
+            <form class="server-preset-card ${active ? 'is-active' : ''}" data-action-form="set-server-preset">
+              <input type="hidden" name="preset" value="${escapeHtml(preset.id)}">
+              <span>${escapeHtml(preset.eyebrow)}</span>
+              <strong>${escapeHtml(preset.title)}</strong>
+              <p>${escapeHtml(preset.summary)}</p>
+              <button class="button button-small ${active ? 'button-ghost' : ''}" type="submit" ${active ? 'disabled' : ''}>${active ? 'Actif' : 'Choisir'}</button>
+            </form>
+          `;
+        }).join('')}
+      </div>
+      <div class="server-preset-advice">
+        <strong>Conseils pour ce profil</strong>
+        <ul>
+          ${activePreset.advice.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>
+    </article>
+  `;
+}
+
+function renderSetupAssistant(state, roleOptions, commandRoleOptions, channelOptions, updatesChannelOptions) {
+  const status = dashboardConfigStatus(state);
+  const onboarding = state.community?.onboarding || { completed: status.completedSteps, total: 5, ready: status.ready, steps: [] };
+  const languageLabel = state.config.language === 'en' ? 'English' : 'Français';
+  const serviceRoleLabel = status.serviceRole ? `@${status.serviceRole.name}` : 'Aucun rôle choisi';
+  const logChannelLabel = status.logChannel ? `#${status.logChannel.name}` : 'Aucun salon choisi';
+  const updatesChannelLabel = status.updatesChannel ? `#${status.updatesChannel.name}` : 'Aucun salon choisi';
+  const commandRolesLabel = status.allowedRoles.length > 0
+    ? status.allowedRoles.map((role) => `@${role.name}`).join(', ')
+    : 'Aucun rôle staff autorisé';
+
+  return `
+    <section class="dashboard-panel setup-assistant">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Assistant</p>
+          <h2>Configurer Noctigarde en 5 étapes</h2>
+          <p class="muted">Suis ces étapes dans l’ordre. Chaque validation met directement à jour ce serveur Discord.</p>
+        </div>
+        <span class="setup-progress">${escapeHtml(onboarding.completed)}/${escapeHtml(onboarding.total)}</span>
+      </div>
+      <div class="onboarding-verification">
+        <div class="onboarding-progress-track" aria-label="Progression de l’installation"><span style="width:${Math.round((onboarding.completed / Math.max(onboarding.total, 1)) * 100)}%"></span></div>
+        <div class="onboarding-checks">${onboarding.steps.map(step => `<article class="${step.complete ? 'is-ready' : 'is-missing'}"><span aria-hidden="true">${step.complete ? '✓' : '!'}</span><div><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.detail)}</small></div></article>`).join('')}</div>
+        <form data-action-form="run-validation"><button class="button button-small button-ghost" type="submit">Vérifier aussi les permissions Discord</button></form>
+      </div>
+      <div class="setup-steps">
+        ${setupStep({
+          index: '01',
+          title: 'Choisir la langue',
+          description: 'Définit la langue utilisée par Noctigarde sur ce serveur.',
+          done: Boolean(state.config.language),
+          current: `Actuel : ${languageLabel}`,
+          content: `
+            <form data-action-form="set-language">
+              <select name="language">
+                <option value="fr"${state.config.language === 'fr' ? ' selected' : ''}>Français</option>
+                <option value="en"${state.config.language === 'en' ? ' selected' : ''}>English</option>
+              </select>
+              <button class="button" type="submit">Valider la langue</button>
+            </form>
+          `
+        })}
+        ${setupStep({
+          index: '02',
+          title: 'Choisir le rôle de service',
+          description: 'Ce rôle sera ajouté quand un membre prend son service, puis retiré à la fin.',
+          done: Boolean(status.serviceRole),
+          current: `Actuel : ${serviceRoleLabel}`,
+          content: `
+            <form data-action-form="set-service-role">
+              <select name="roleId">${roleOptions}</select>
+              <button class="button" type="submit">Configurer le rôle</button>
+            </form>
+          `
+        })}
+        ${setupStep({
+          index: '03',
+          title: 'Choisir le salon de logs',
+          description: 'Noctigarde y publiera les prises de service, fins de service et actions importantes.',
+          done: Boolean(status.logChannel),
+          current: `Actuel : ${logChannelLabel}`,
+          content: `
+            <form data-action-form="set-log-channel">
+              <select name="channelId">${channelOptions}</select>
+              <button class="button" type="submit">Configurer les logs</button>
+            </form>
+          `
+        })}
+        ${setupStep({
+          index: '04',
+          title: 'Ajouter les rôles autorisés',
+          description: 'Ces rôles pourront gérer Noctigarde depuis Discord et depuis le dashboard.',
+          done: status.allowedRoles.length > 0,
+          current: `Actuel : ${commandRolesLabel}`,
+          content: `
+            <form data-action-form="add-command-role">
+              <select name="roleId">${commandRoleOptions}</select>
+              <button class="button" type="submit">Autoriser ce rôle</button>
+            </form>
+          `
+        })}
+        ${setupStep({
+          index: '05',
+          title: 'Choisir le salon des nouveautés',
+          description: 'Étape obligatoire : Noctigarde y publie les annonces importantes du bot.',
+          done: Boolean(status.updatesChannel && state.config.statusUpdatesEnabled),
+          current: `Actuel : ${updatesChannelLabel}`,
+          content: `
+            <form data-action-form="set-updates-channel">
+              <select name="channelId">${updatesChannelOptions}</select>
+              <button class="button" type="submit">Valider ce salon</button>
+            </form>
+          `
+        })}
+      </div>
+      ${serverPresetSelector(state)}
+      <div class="setup-footer">
+        ${status.ready
+          ? '<p>Configuration complète. Tu peux publier le panneau de service ou gérer le serveur depuis les autres onglets.</p>'
+          : '<p>Quand les 5 étapes sont prêtes, Noctigarde peut être utilisé proprement par le staff et les membres.</p>'}
+        <button class="button button-ghost" type="button" data-dashboard-tab="configuration">Voir les réglages avancés</button>
+      </div>
+    </section>
+  `;
+}
+
+function configSummaryList(state) {
+  const status = dashboardConfigStatus(state);
+  const languageLabel = state.config.language === 'en' ? 'English' : 'Français';
+  const preset = currentServerPreset(state);
+  const rows = [
+    {
+      label: 'Profil',
+      value: preset.title,
+      ready: true
+    },
+    {
+      label: 'Langue',
+      value: languageLabel,
+      ready: Boolean(state.config.language)
+    },
+    {
+      label: 'Rôle de service',
+      value: status.serviceRole ? `@${status.serviceRole.name}` : 'Non configuré',
+      ready: Boolean(status.serviceRole)
+    },
+    {
+      label: 'Salon de logs',
+      value: status.logChannel ? `#${status.logChannel.name}` : 'Non configuré',
+      ready: Boolean(status.logChannel)
+    },
+    {
+      label: 'État technique',
+      value: status.statusChannel ? `#${status.statusChannel.name}` : 'Optionnel',
+      ready: true
+    },
+    {
+      label: 'Salon des nouveautés',
+      value: status.updatesChannel ? `#${status.updatesChannel.name}` : 'Obligatoire',
+      ready: Boolean(status.updatesChannel)
+    },
+    {
+      label: 'Nouveautés',
+      value: state.config.statusUpdatesEnabled ? 'Activées' : 'Désactivées',
+      ready: Boolean(state.config.statusUpdatesEnabled && status.updatesChannel)
+    },
+    {
+      label: 'Rôles staff',
+      value: status.allowedRoles.length > 0
+        ? status.allowedRoles.map((role) => `@${role.name}`).join(', ')
+        : 'Aucun rôle staff autorisé',
+      ready: status.allowedRoles.length > 0
+    }
+  ];
+
+  return `
+    <dl class="config-summary-list">
+      ${rows.map((row) => `
+        <div class="config-summary-row ${row.ready ? 'is-ready' : 'is-warning'}">
+          <dt>${escapeHtml(row.label)}</dt>
+          <dd>${escapeHtml(row.value)}</dd>
+        </div>
+      `).join('')}
+    </dl>
+  `;
+}
+
+function officialUpdateHistory(state) {
+  const items = state.officialUpdates || [];
+  const labels = {
+    delivered: 'Livrée',
+    pending: 'En attente',
+    retrying: 'Nouvel essai prévu',
+    failed: 'Échec',
+    cancelled: 'Annulée'
+  };
+
+  if (items.length === 0) {
+    return '<p class="muted">Aucune annonce n’a encore été envoyée sur ce serveur.</p>';
+  }
+
+  return `
+    <div class="table-shell">
+      <table class="dashboard-table">
+        <thead><tr><th>Annonce</th><th>État</th><th>Essais</th><th>Dernière activité</th></tr></thead>
+        <tbody>
+          ${items.map((item) => {
+            const messageUrl = item.messageId && item.channelId
+              ? `https://discord.com/channels/${state.guild.id}/${item.channelId}/${item.messageId}`
+              : null;
+            const title = messageUrl
+              ? `<a href="${escapeHtml(messageUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>`
+              : escapeHtml(item.title);
+            return `
+              <tr>
+                <td><strong>${title}</strong>${item.lastError ? `<small>${escapeHtml(item.lastError)}</small>` : ''}</td>
+                <td>${statusBadge(labels[item.status] || item.status, item.status === 'delivered')}</td>
+                <td>${escapeHtml(item.attemptCount || 0)}</td>
+                <td>${escapeHtml(formatAuditDate(item.deliveredAt || item.updatedAt || item.publishedAt))}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function repairCenterPanel(state) {
+  const report = state.repairCenter;
+  const issues = report?.issues || [];
+  return `
+    <div class="command-roles repair-center-panel">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Contrôle automatique</p><h3>Centre de réparation</h3><p class="muted">Repère les rôles, salons, panneaux et programmations qui ne correspondent plus à Discord.</p></div>${report ? statusBadge(issues.length ? `${issues.length} à corriger` : 'Tout est en ordre', !issues.length) : statusBadge('À contrôler', false)}</div>
+      ${issues.length ? `<div class="operation-list">${issues.map(item => `<div class="operation-row"><div><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail)}</small></div>${item.repairable ? '<span class="status-badge">Réparable</span>' : ''}</div>`).join('')}</div>` : `<p class="muted">${report ? 'Aucune référence cassée détectée lors du dernier contrôle.' : 'Aucun contrôle n’a encore été lancé.'}</p>`}
+      <div class="split-actions">
+        <form data-action-form="scan-repairs"><button class="button button-small" type="submit">Contrôler maintenant</button></form>
+        <form data-action-form="apply-safe-repairs"><button class="button button-small button-ghost" type="submit" ${issues.some(item => item.repairable) ? '' : 'disabled'}>Réparer les références sûres</button></form>
+      </div>
+      ${report?.scannedAt ? `<small class="muted">Dernier contrôle : ${escapeHtml(formatAuditDate(report.scannedAt))}</small>` : ''}
+    </div>`;
+}
+
+function privacyCenterPanel(state) {
+  const retention = state.privacy?.retention || {};
+  const requests = state.privacy?.requests || [];
+  const canExport = Boolean(state.viewerAccess?.isGuildOwner || state.siteAccess?.isFounder);
+  return `
+    <div class="command-roles privacy-center-panel">
+      <div class="panel-heading"><p class="eyebrow">Données du serveur</p><h3>Conservation et confidentialité</h3><p class="muted">Le propriétaire peut récupérer une copie des données ou demander leur suppression contrôlée.</p></div>
+      <form data-action-form="set-data-retention" class="operation-form-grid">
+        <label><span>Journaux d’auto-modération</span><input name="automodDays" type="number" min="30" max="3650" value="${escapeHtml(retention.automodDays || 365)}"><small>jours</small></label>
+        <label><span>Historique des actions</span><input name="auditDays" type="number" min="30" max="3650" value="${escapeHtml(retention.auditDays || 365)}"><small>jours</small></label>
+        <label><span>Archives de nettoyage</span><input name="purgeArchiveDays" type="number" min="30" max="3650" value="${escapeHtml(retention.purgeArchiveDays || 365)}"><small>jours</small></label>
+        <label><span>Archives de dossiers</span><input name="dossierArchiveDays" type="number" min="30" max="3650" value="${escapeHtml(retention.dossierArchiveDays || 730)}"><small>jours</small></label>
+        <button class="button button-small" type="submit">Enregistrer les durées</button>
+      </form>
+      <div class="split-actions">
+        ${canExport ? `<a class="button button-small" href="/api/guilds/${escapeHtml(state.guild.id)}/privacy/export?format=pdf">Télécharger le rapport PDF</a><a class="button button-small button-ghost" href="/api/guilds/${escapeHtml(state.guild.id)}/privacy/export?format=json">Format technique JSON</a>` : '<span class="muted">Export complet réservé au propriétaire.</span>'}
+      </div>
+      ${state.viewerAccess?.isGuildOwner ? `<form data-action-form="request-guild-data-deletion" class="operation-form-grid"><label><span>Demande de suppression</span><textarea name="reason" maxlength="1000" placeholder="Explique la demande afin qu’elle puisse être contrôlée."></textarea></label><button class="button button-small button-ghost" type="submit">Envoyer la demande</button></form>` : ''}
+      ${requests.length ? `<div class="operation-list">${requests.map(item => `<div class="operation-row"><div><strong>${escapeHtml(item.requestKey)}</strong><small>${escapeHtml(item.status)} · ${escapeHtml(formatAuditDate(item.createdAt))}</small></div></div>`).join('')}</div>` : ''}
+    </div>`;
+}
+
+function renderConfigurationHub(state, channelOptions, statusChannelOptions, updatesChannelOptions, updatesRoleOptions) {
+  const status = dashboardConfigStatus(state);
+  const statusChannelLabel = status.statusChannel ? `#${status.statusChannel.name}` : 'Aucun salon statut choisi';
+  const updatesChannelLabel = status.updatesChannel ? `#${status.updatesChannel.name}` : 'Aucun salon des nouveautés choisi';
+  const statusUpdatesLabel = state.config.statusUpdatesEnabled ? 'activées' : 'désactivées';
+  const statusUpdatesNextEnabled = state.config.statusUpdatesEnabled ? 'false' : 'true';
+  const updatesRole = resolveRole(state, state.config.updatesPingRoleId);
+
+  return `
+    <section class="dashboard-panel config-hub" id="configuration">
+      <div class="panel-heading">
+        <p class="eyebrow">Configuration</p>
+        <h2>Réglages avancés</h2>
+        <p class="muted">Ici, tu retrouves les actions utiles après la première installation. Les réglages de base restent dans l’assistant pour garder un parcours simple.</p>
+      </div>
+      <div class="config-hub-grid">
+        <article class="config-hub-card">
+          <h3>Réglages de base</h3>
+          <p>Ces réglages se modifient dans l’assistant, pour garder un parcours simple et éviter les erreurs.</p>
+          ${configSummaryList(state)}
+          <button class="button button-ghost" type="button" data-dashboard-tab="setup">Ouvrir l’assistant de configuration</button>
+        </article>
+        <article class="config-hub-card">
+          <h3>Bureau de service</h3>
+          <p>Publie ou republie le bureau où les agents ouvrent leur poste, le clôturent et consultent le déploiement.</p>
+          <form data-action-form="publish-service-panel">
+            ${labelHelp('Salon de publication', 'Salon dans lequel Noctigarde déposera le Bureau de service et ses boutons de présence.')}
+            <select name="channelId">${channelOptions}</select>
+            <button class="button" type="submit">Publier le bureau</button>
+          </form>
+        </article>
+        <article class="config-hub-card">
+          <h3>État technique</h3>
+          <p>Optionnel : Noctigarde maintient dans ce salon un panneau séparé sur son fonctionnement.</p>
+          <p class="muted">Actuel : ${escapeHtml(statusChannelLabel)}.</p>
+          <form data-action-form="set-status-channel">
+            ${labelHelp('Salon de statut', 'Noctigarde y maintient uniquement son panneau d’état technique.')}
+            <select name="channelId">${statusChannelOptions}</select>
+            <button class="button" type="submit">Publier l’état technique</button>
+          </form>
+          <form data-action-form="disable-status-channel">
+            <button class="button button-ghost" type="submit" ${state.config.statusChannelId ? '' : 'disabled'}>Retirer le panneau technique</button>
+          </form>
+        </article>
+        <article class="config-hub-card config-updates-card">
+          <h3>Annonces officielles</h3>
+          <p>Ce salon reçoit uniquement les nouveautés publiques de Noctigarde. Il reste indépendant du panneau technique.</p>
+          <p class="muted">Actuel : ${escapeHtml(updatesChannelLabel)}. Diffusion : ${escapeHtml(statusUpdatesLabel)}.</p>
+          <form data-action-form="set-updates-channel">
+            ${labelHelp('Salon des nouveautés', 'Noctigarde y publie les annonces destinées à tous les serveurs abonnés.')}
+            <select name="channelId">${updatesChannelOptions}</select>
+            <button class="button" type="submit">Choisir ce salon</button>
+          </form>
+          <form data-action-form="set-updates-role">
+            ${labelHelp('Rôle à prévenir', 'Optionnel : ce rôle sera mentionné pour chaque nouvelle annonce officielle.')}
+            <select name="roleId">${updatesRoleOptions}</select>
+            <button class="button button-ghost" type="submit">Enregistrer la mention</button>
+          </form>
+          <div class="split-actions">
+            <form data-action-form="test-status-updates">
+              <button class="button button-ghost" type="submit" ${state.config.updatesChannelId ? '' : 'disabled'}>Tester le salon</button>
+            </form>
+            <form data-action-form="set-status-updates">
+              <input type="hidden" name="enabled" value="${statusUpdatesNextEnabled}">
+              <button class="button button-ghost" type="submit" ${state.config.updatesChannelId ? '' : 'disabled'}>
+                ${state.config.statusUpdatesEnabled ? 'Suspendre la diffusion' : 'Réactiver la diffusion'}
+              </button>
+            </form>
+            <form data-action-form="clear-updates-role">
+              <button class="button button-ghost" type="submit" ${updatesRole ? '' : 'disabled'}>Retirer la mention</button>
+            </form>
+          </div>
+        </article>
+      </div>
+      <div class="command-roles official-update-history">
+        <h3>Suivi des annonces ${helpTip('Chaque envoi affiche son état, le nombre d’essais et son dernier résultat.')}</h3>
+        ${officialUpdateHistory(state)}
+      </div>
+      <div class="command-roles staff-permissions-panel">
+        <h3>Permissions staff ${helpTip('Liste des rôles qui peuvent gérer Noctigarde. Pour ajouter un rôle, utilise l’étape 4 de l’assistant.')}</h3>
+        <div class="role-chip-row">${commandRoleList(state)}</div>
+        <button class="button button-small" type="button" data-dashboard-tab="setup">Gérer dans l’assistant</button>
+      </div>
+      ${repairCenterPanel(state)}
+      ${privacyCenterPanel(state)}
+      ${status.ready
+        ? '<div class="dashboard-alert is-ready"><strong>Configuration prête</strong><p>Tu peux publier le panneau ou continuer avec les autres onglets.</p></div>'
+        : '<div class="dashboard-alert is-warning"><strong>Configuration incomplète</strong><p>Termine l’assistant avant de publier le panneau pour éviter un bouton inutilisable.</p><button class="button button-small" type="button" data-dashboard-tab="setup">Ouvrir l’assistant</button></div>'}
+    </section>
+  `;
+}
+
+function commandRoleList(state) {
+  const roles = (state.config.commandRoleIds || [])
+    .map((roleId) => (state.roles || []).find((role) => role.id === roleId))
+    .filter(Boolean);
+
+  if (roles.length === 0) {
+    return '<p class="muted">Aucun rôle autorisé n’est configuré. Le démarrage sécurisé reste actif.</p>';
+  }
+
+  return roles.map((role) => `
+    <span class="role-chip">
+      ${escapeHtml(role.name)}
+      <button type="button" data-action-click="remove-command-role" data-role-id="${role.id}">Retirer</button>
+    </span>
+  `).join('');
+}
+
+function activeServices(state) {
+  const services = state.activeServices || [];
+
+  if (services.length === 0) {
+    return '<p class="muted">Aucun agent en service.</p>';
+  }
+
+  return `
+    <ul class="compact-list">
+      ${services.map((service) => `<li><code>${escapeHtml(service.userId)}</code><span>${escapeHtml(service.durationLabel)}</span></li>`).join('')}
+    </ul>
+  `;
+}
+
+function topService(state) {
+  const users = state.topService || [];
+
+  if (users.length === 0) {
+    return '<p class="muted">Aucun temps enregistré.</p>';
+  }
+
+  return `
+    <ul class="compact-list">
+      ${users.map((user, index) => `<li><code>#${index + 1} ${escapeHtml(user.userId)}</code><span>${escapeHtml(user.totalTimeLabel)}</span></li>`).join('')}
+    </ul>
+  `;
+}
+
+function ratioPercent(value, max) {
+  if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) {
+    return 0;
+  }
+
+  return Math.max(4, Math.min(100, Math.round((value / max) * 100)));
+}
+
+function applyDeferredStyles(root = document) {
+  root.querySelectorAll('[data-chart-width]').forEach((bar) => {
+    const width = Math.max(0, Math.min(100, Number(bar.dataset.chartWidth) || 0));
+    bar.style.width = `${width}%`;
+  });
+}
+
+function leaderboardChart(items = [], emptyText = 'Aucune donnée à afficher.') {
+  const rows = items.slice(0, 6);
+
+  if (rows.length === 0) {
+    return `<p class="muted">${escapeHtml(emptyText)}</p>`;
+  }
+
+  const max = Math.max(...rows.map((item) => Number(item.totalTime) || 0), 1);
+
+  return `
+    <div class="service-chart">
+      ${rows.map((item, index) => `
+        <div class="service-chart-row">
+          <span class="chart-rank">#${index + 1}</span>
+          <span class="chart-user">${escapeHtml(item.userId)}</span>
+          <span class="chart-bar"><i data-chart-width="${escapeHtml(ratioPercent(Number(item.totalTime) || 0, max))}"></i></span>
+          <strong>${escapeHtml(item.totalTimeLabel || '0h 0min')}</strong>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function activeServicesPanel(state) {
+  const services = (state.activeServices || []).slice(0, 8);
+
+  if (services.length === 0) {
+    return `
+      <div class="service-empty">
+        <strong>Aucun agent en service</strong>
+        <p>Quand un membre prend son service, il apparaît ici avec la durée en cours.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="active-service-grid">
+      ${services.map((service) => `
+        <article>
+          <span>Agent</span>
+          <strong>${escapeHtml(service.userId)}</strong>
+          <small>${escapeHtml(service.durationLabel)}</small>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function formatSessionDate(value) {
+  if (!value) {
+    return 'Date inconnue';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(document.documentElement.lang === 'en' ? 'en-US' : 'fr-FR', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(date);
+}
+
+function personalHistory(state) {
+  const personal = state.personalService;
+
+  if (!personal) {
+    return '<p class="muted">Connecte-toi avec Discord pour voir ton historique personnel.</p>';
+  }
+
+  const sessions = personal.sessions || [];
+
+  return `
+    <div class="personal-service">
+      <div class="personal-service-head">
+        <div>
+          <span>Total personnel</span>
+          <strong>${escapeHtml(personal.totalTimeLabel)}</strong>
+        </div>
+        <div>
+          <span>Statut</span>
+          <strong>${personal.active ? 'En service' : 'Hors service'}</strong>
+          ${personal.activeDurationLabel ? `<small>${escapeHtml(personal.activeDurationLabel)}</small>` : ''}
+        </div>
+        <div>
+          <span>Sessions</span>
+          <strong>${escapeHtml(personal.sessionCount)}</strong>
+        </div>
+      </div>
+      ${sessions.length === 0
+        ? '<p class="muted">Aucune session terminée pour ton compte sur ce serveur.</p>'
+        : `<ul class="session-list">
+            ${sessions.map((session) => `
+              <li>
+                <span>${escapeHtml(formatSessionDate(session.date))}</span>
+                <strong>${escapeHtml(session.durationLabel)}</strong>
+              </li>
+            `).join('')}
+          </ul>`}
+    </div>
+  `;
+}
+
+function premiumServiceRoadmap(state, premiumTag) {
+  const disabled = state.advanced ? '' : ' aria-disabled="true"';
+  const items = [
+    ['Top mois', 'Classement mensuel pour suivre les agents les plus actifs sur une période longue.'],
+    ['Top année', 'Vision annuelle utile pour les grandes communautés et les bilans staff.'],
+    ['Exports CSV/PDF', 'Export des heures, sessions et classements pour archivage ou partage externe.'],
+    ['Rapports automatiques', 'Résumés hebdomadaires ou mensuels publiés automatiquement dans un salon choisi.']
+  ];
+
+  return `
+    <div class="service-roadmap">
+      ${items.map(([title, text]) => `
+        <article${disabled}>
+          <span>${premiumTag}</span>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(text)}</p>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function payrollCopy() {
+  const isEnglish = document.documentElement.lang === 'en';
+
+  return isEnglish
+    ? {
+        eyebrow: 'Salaries',
+        title: 'Weekly salary register',
+        description: 'Set the hourly salary and mark which salaries have been issued.',
+        rateLabel: 'Hourly amount',
+        rateHelp: 'Amount used to calculate the estimated salary from completed sessions and current duty time.',
+        currencyLabel: 'Currency / unit',
+        currencyHelp: 'Short label displayed after the amount, for example $, €, credits, or SA$.',
+        update: 'Update salary settings',
+        roleRates: 'Role rates',
+        roleRatesHelp: 'A member uses the highest configured rate among their current Discord roles. If no role matches, Noctigarde uses the global rate.',
+        roleLabel: 'Discord role',
+        roleRateLabel: 'Role hourly amount',
+        setRoleRate: 'Save role rate',
+        removeRoleRate: 'Remove',
+        roleRatesEmpty: 'No specific role rate yet.',
+        adjustments: 'Adjustments',
+        adjustmentsHelp: 'Add a bonus, deduction, or correction for the current week without changing the recorded hours.',
+        userId: 'User ID',
+        type: 'Type',
+        bonus: 'Bonus',
+        deduction: 'Deduction',
+        correction: 'Correction',
+        amount: 'Amount',
+        reason: 'Reason',
+        addAdjustment: 'Add adjustment',
+        adjustmentsEmpty: 'No adjustment for this week.',
+        archive: 'Archive week',
+        archiveHelp: 'Saves a snapshot of the current week: hours, amounts, paid status, and adjustments.',
+        archiveButton: 'Archive this week',
+        updateArchiveButton: 'Refresh this archive',
+        currentArchive: 'This week was archived on',
+        historyTitle: 'Salary archives',
+        historyEyebrow: 'Ledger',
+        historyHelp: 'Review prior periods, find an agent, and continue salary tracking without changing frozen hours or amounts.',
+        historySearch: 'Search by period, agent, or Discord ID',
+        historyStatus: 'Salary status',
+        historyAll: 'All periods',
+        historyOpen: 'Salaries pending',
+        historySettled: 'Fully issued',
+        historyCount: 'archived period(s)',
+        historyEmpty: 'No salary period has been archived yet.',
+        historyNoMatch: 'No archive matches these filters.',
+        archivedOn: 'Archived on',
+        archivedBy: 'Archived by',
+        lastActivity: 'Last activity',
+        paymentProgress: 'Salary progress',
+        paymentJournal: 'Salary journal',
+        paymentJournalEmpty: 'No status change has been recorded for this period yet.',
+        markedPaid: 'marked the salary as issued for',
+        markedUnpaid: 'returned the salary to pending for',
+        clearFilters: 'Clear filters',
+        filterButton: 'Filter',
+        loadMoreArchives: 'Load older periods',
+        summary: 'Weekly summary',
+        week: 'Current week',
+        agents: 'Agents',
+        totalHours: 'Total hours',
+        hourlyRate: 'Rate',
+        basePay: 'Base salary',
+        adjustmentTotal: 'Adjustments',
+        estimatedPay: 'Estimated salary',
+        toPay: 'To issue',
+        alreadyPaid: 'Already issued',
+        status: 'Status',
+        paid: 'Issued',
+        unpaid: 'To issue',
+        markPaid: 'Mark issued',
+        markUnpaid: 'Return to pending',
+        paidBy: 'Issued by',
+        empty: 'No service time recorded for the current week.',
+        note: 'Administrative salary register for the server.',
+        premiumOnly: 'Advanced option'
+      }
+    : {
+        eyebrow: 'Salaires',
+        title: 'Registre hebdomadaire des salaires',
+        description: 'Règle le salaire horaire et indique quels salaires ont été versés.',
+        rateLabel: 'Salaire par heure',
+        rateHelp: 'Montant utilisé pour calculer le salaire estimé à partir des sessions terminées et du service en cours.',
+        currencyLabel: 'Devise / unité',
+        currencyHelp: 'Texte court affiché après le montant, par exemple $, €, crédits ou SA$.',
+        update: 'Mettre à jour les salaires',
+        roleRates: 'Taux par rôle',
+        roleRatesHelp: 'Un membre utilise le meilleur taux configuré parmi ses rôles Discord actuels. Si aucun rôle ne correspond, Noctigarde utilise le taux global.',
+        roleLabel: 'Rôle Discord',
+        roleRateLabel: 'Salaire par heure du rôle',
+        setRoleRate: 'Enregistrer le taux',
+        removeRoleRate: 'Retirer',
+        roleRatesEmpty: 'Aucun taux spécifique configuré pour le moment.',
+        adjustments: 'Ajustements',
+        adjustmentsHelp: 'Ajoute une prime, une retenue ou une correction sur la semaine en cours sans modifier les heures enregistrées.',
+        userId: 'ID utilisateur',
+        type: 'Type',
+        bonus: 'Prime',
+        deduction: 'Retenue',
+        correction: 'Correction',
+        amount: 'Montant',
+        reason: 'Raison',
+        addAdjustment: 'Ajouter l’ajustement',
+        adjustmentsEmpty: 'Aucun ajustement sur cette semaine.',
+        archive: 'Archiver la semaine',
+        archiveHelp: 'Enregistre une capture de la semaine : heures, montants, salaires versés ou à verser et ajustements.',
+        archiveButton: 'Archiver cette semaine',
+        updateArchiveButton: 'Actualiser cette archive',
+        currentArchive: 'Cette semaine a été archivée le',
+        historyTitle: 'Archives des salaires',
+        historyEyebrow: 'Registre',
+        historyHelp: 'Retrouve les périodes précédentes, cherche un agent et poursuis le suivi des salaires sans modifier les heures ni les montants figés.',
+        historySearch: 'Rechercher une période, un agent ou un ID Discord',
+        historyStatus: 'État des salaires',
+        historyAll: 'Toutes les périodes',
+        historyOpen: 'Salaires à verser',
+        historySettled: 'Salaires versés',
+        historyCount: 'période(s) archivée(s)',
+        historyEmpty: 'Aucune période de salaire n’a encore été archivée.',
+        historyNoMatch: 'Aucune archive ne correspond à ces filtres.',
+        archivedOn: 'Archivée le',
+        archivedBy: 'Archivée par',
+        lastActivity: 'Dernière activité',
+        paymentProgress: 'Avancement des salaires',
+        paymentJournal: 'Journal des salaires',
+        paymentJournalEmpty: 'Aucun changement d’état n’a encore été enregistré pour cette période.',
+        markedPaid: 'a marqué le salaire comme versé pour',
+        markedUnpaid: 'a remis le salaire en attente pour',
+        clearFilters: 'Effacer les filtres',
+        filterButton: 'Filtrer',
+        loadMoreArchives: 'Charger les périodes plus anciennes',
+        summary: 'Résumé semaine',
+        week: 'Semaine en cours',
+        agents: 'Agents',
+        totalHours: 'Heures totales',
+        hourlyRate: 'Taux',
+        basePay: 'Salaire de base',
+        adjustmentTotal: 'Ajustements',
+        estimatedPay: 'Salaire estimé',
+        toPay: 'À verser',
+        alreadyPaid: 'Déjà versé',
+        status: 'État',
+        paid: 'Versé',
+        unpaid: 'À verser',
+        markPaid: 'Marquer versé',
+        markUnpaid: 'Remettre en attente',
+        paidBy: 'Versé par',
+        empty: 'Aucune heure de service enregistrée sur la semaine en cours.',
+        note: 'Registre administratif des salaires du serveur.',
+        premiumOnly: 'Option avancée'
+      };
+}
+
+function payrollSummaryCards(payroll, copy) {
+  const cards = [
+    [copy.week, `${payroll.weekStart} → ${payroll.weekEnd}`],
+    [copy.agents, payroll.totals?.userCount || 0],
+    [copy.totalHours, payroll.totals?.totalTimeLabel || '0h 0min 0s'],
+    [copy.estimatedPay, payroll.totals?.totalAmountLabel || `0 ${payroll.settings?.currency || '$'}`],
+    [copy.adjustmentTotal, payroll.totals?.adjustmentAmountLabel || `0 ${payroll.settings?.currency || '$'}`],
+    [copy.toPay, payroll.totals?.unpaidAmountLabel || `0 ${payroll.settings?.currency || '$'}`],
+    [copy.alreadyPaid, payroll.totals?.paidAmountLabel || `0 ${payroll.settings?.currency || '$'}`]
+  ];
+
+  return `
+    <div class="payroll-summary">
+      ${cards.map(([label, value]) => `
+        <div>
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function payrollTable(payroll, copy) {
+  const items = payroll.items || [];
+
+  if (items.length === 0) {
+    return `<p class="muted">${escapeHtml(copy.empty)}</p>`;
+  }
+
+  return `
+    <div class="table-shell payroll-table-shell">
+      <table class="dashboard-table payroll-table">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>${escapeHtml(copy.totalHours)}</th>
+            <th>${escapeHtml(copy.hourlyRate)}</th>
+            <th>${escapeHtml(copy.basePay)}</th>
+            <th>${escapeHtml(copy.adjustmentTotal)}</th>
+            <th>${escapeHtml(copy.estimatedPay)}</th>
+            <th>${escapeHtml(copy.status)}</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => {
+            const nextPaid = item.paid ? 'false' : 'true';
+            return `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(item.displayName || item.username || item.userId)}</strong>
+                  <small><code>${escapeHtml(item.userId)}</code></small>
+                </td>
+                <td><strong>${escapeHtml(item.totalTimeLabel)}</strong></td>
+                <td>
+                  <strong>${escapeHtml(item.hourlyRateLabel || '')}</strong>
+                  ${item.payrollRoleName ? `<small>${escapeHtml(item.payrollRoleName)}</small>` : ''}
+                </td>
+                <td>${escapeHtml(item.baseAmountLabel || item.amountLabel)}</td>
+                <td>
+                  <strong>${escapeHtml(item.adjustmentAmountLabel || `0 ${payroll.settings?.currency || '$'}`)}</strong>
+                  ${item.adjustments?.length ? `<small>${escapeHtml(item.adjustments.length)} ligne(s)</small>` : ''}
+                </td>
+                <td><strong>${escapeHtml(item.amountLabel)}</strong></td>
+                <td>
+                  ${statusBadge(item.paid ? copy.paid : copy.unpaid, item.paid)}
+                  ${item.paidAt ? `<small>${escapeHtml(formatSessionDate(item.paidAt))}</small>` : ''}
+                  ${item.paidByUserId ? `<small>${escapeHtml(copy.paidBy)} : ${escapeHtml(item.paidByUserId)}</small>` : ''}
+                </td>
+                <td>
+                  <form class="table-action-form payroll-action-form" data-action-form="toggle-payroll-paid">
+                    <input type="hidden" name="userId" value="${escapeHtml(item.userId)}">
+                    <input type="hidden" name="weekStart" value="${escapeHtml(payroll.weekStart)}">
+                    <input type="hidden" name="paid" value="${nextPaid}">
+                    <button class="button button-small${item.paid ? ' button-ghost' : ''}" type="submit">${escapeHtml(item.paid ? copy.markUnpaid : copy.markPaid)}</button>
+                  </form>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function payrollRoleRatesList(payroll, copy) {
+  const items = payroll.roleSettings || [];
+
+  if (!items.length) {
+    return `<p class="muted">${escapeHtml(copy.roleRatesEmpty)}</p>`;
+  }
+
+  return `
+    <div class="compact-record-list payroll-role-rates">
+      ${items.map((item) => `
+        <article>
+          <div>
+            <strong>${escapeHtml(item.roleName || item.roleId)}</strong>
+            <small>${escapeHtml(item.hourlyRateLabel || item.hourlyRate)}</small>
+          </div>
+          <form class="table-action-form" data-action-form="remove-payroll-role-rate">
+            <input type="hidden" name="roleId" value="${escapeHtml(item.roleId)}">
+            <button class="button button-small button-ghost" type="submit">${escapeHtml(copy.removeRoleRate)}</button>
+          </form>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function payrollAdjustmentList(payroll, copy) {
+  const adjustments = payroll.adjustments || [];
+
+  if (!adjustments.length) {
+    return `<p class="muted">${escapeHtml(copy.adjustmentsEmpty)}</p>`;
+  }
+
+  return `
+    <div class="compact-record-list payroll-adjustments">
+      ${adjustments.slice(0, 8).map((item) => `
+        <article>
+          <div>
+            <strong><code>${escapeHtml(item.userId)}</code> ${escapeHtml(item.amountLabel || item.amount)}</strong>
+            <small>${escapeHtml(item.label || item.type)}${item.reason ? ` · ${escapeHtml(item.reason)}` : ''}</small>
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function normalizePayrollSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function payrollArchiveTable(archive, copy) {
+  const items = archive.items || [];
+
+  if (!items.length) {
+    return `<p class="muted">${escapeHtml(copy.empty)}</p>`;
+  }
+
+  return `
+    <div class="table-shell payroll-table-shell">
+      <table class="dashboard-table payroll-table payroll-archive-table">
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>${escapeHtml(copy.totalHours)}</th>
+            <th>${escapeHtml(copy.hourlyRate)}</th>
+            <th>${escapeHtml(copy.basePay)}</th>
+            <th>${escapeHtml(copy.adjustmentTotal)}</th>
+            <th>${escapeHtml(copy.estimatedPay)}</th>
+            <th>${escapeHtml(copy.status)}</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => {
+            const nextPaid = item.paid ? 'false' : 'true';
+            return `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(item.displayName || item.username || item.userId)}</strong>
+                  <small><code>${escapeHtml(item.userId)}</code></small>
+                </td>
+                <td><strong>${escapeHtml(item.totalTimeLabel)}</strong></td>
+                <td>
+                  <strong>${escapeHtml(item.hourlyRateLabel || '')}</strong>
+                  ${item.payrollRoleName ? `<small>${escapeHtml(item.payrollRoleName)}</small>` : ''}
+                </td>
+                <td>${escapeHtml(item.baseAmountLabel || item.amountLabel)}</td>
+                <td><strong>${escapeHtml(item.adjustmentAmountLabel || '')}</strong></td>
+                <td><strong>${escapeHtml(item.amountLabel)}</strong></td>
+                <td>
+                  ${statusBadge(item.paid ? copy.paid : copy.unpaid, item.paid)}
+                  ${item.updatedAt ? `<small>${escapeHtml(formatSessionDate(item.updatedAt))}</small>` : ''}
+                  ${item.statusChangedByUserId ? `<small>${escapeHtml(copy.paidBy)} : ${escapeHtml(item.statusChangedByUserId)}</small>` : ''}
+                </td>
+                <td>
+                  <form class="table-action-form payroll-action-form" data-action-form="toggle-payroll-paid" data-payroll-archive-week="${escapeHtml(archive.weekStart)}">
+                    <input type="hidden" name="userId" value="${escapeHtml(item.userId)}">
+                    <input type="hidden" name="weekStart" value="${escapeHtml(archive.weekStart)}">
+                    <input type="hidden" name="paid" value="${nextPaid}">
+                    <button class="button button-small${item.paid ? ' button-ghost' : ''}" type="submit">${escapeHtml(item.paid ? copy.markUnpaid : copy.markPaid)}</button>
+                  </form>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function payrollArchiveJournal(archive, copy) {
+  const events = archive.events || [];
+
+  if (!events.length) {
+    return `<p class="muted">${escapeHtml(copy.paymentJournalEmpty)}</p>`;
+  }
+
+  return `
+    <ol class="payroll-event-list">
+      ${events.map((event) => {
+        const actor = event.changedByDisplayName || event.changedByUserId || 'Noctigarde';
+        const agent = event.userDisplayName || event.userId;
+        return `
+          <li>
+            <span class="payroll-event-marker ${event.paid ? 'is-paid' : 'is-unpaid'}" aria-hidden="true"></span>
+            <span>
+              <strong>${escapeHtml(actor)}</strong>
+              ${escapeHtml(event.paid ? copy.markedPaid : copy.markedUnpaid)}
+              <strong>${escapeHtml(agent)}</strong>
+              <small>${escapeHtml(formatSessionDate(event.changedAt))} · <code>${escapeHtml(event.userId)}</code></small>
+            </span>
+          </li>
+        `;
+      }).join('')}
+    </ol>
+  `;
+}
+
+function payrollArchiveHistory(history, copy) {
+  const archives = history?.items || [];
+
+  if (!archives.length) {
+    return `
+      <section class="payroll-history">
+        <div class="panel-heading">
+          <p class="eyebrow">${escapeHtml(copy.historyEyebrow)}</p>
+          <h3>${escapeHtml(copy.historyTitle)}</h3>
+          <p class="muted">${escapeHtml(copy.historyHelp)}</p>
+        </div>
+        <p class="muted">${escapeHtml(copy.historyEmpty)}</p>
+      </section>
+    `;
+  }
+
+  const query = normalizePayrollSearch(payrollHistoryFilters.query);
+  const status = ['open', 'settled'].includes(payrollHistoryFilters.status)
+    ? payrollHistoryFilters.status
+    : 'all';
+  const filtered = archives.filter((archive) => {
+    const settled = (archive.totals?.userCount || 0) > 0 && (archive.totals?.unpaidCount || 0) === 0;
+
+    if (status === 'open' && settled) return false;
+    if (status === 'settled' && !settled) return false;
+    if (!query) return true;
+
+    const haystack = [
+      archive.weekStart,
+      archive.weekEnd,
+      archive.archivedByDisplayName,
+      archive.archivedByUserId,
+      ...(archive.items || []).flatMap((item) => [item.userId, item.displayName, item.username])
+    ].map(normalizePayrollSearch).join(' ');
+
+    return haystack.includes(query);
+  });
+
+  return `
+    <section class="payroll-history">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">${escapeHtml(copy.historyEyebrow)}</p>
+          <h3>${escapeHtml(copy.historyTitle)}</h3>
+          <p class="muted">${escapeHtml(copy.historyHelp)}</p>
+        </div>
+        <span class="status-badge">${escapeHtml(history.totalCount || archives.length)} ${escapeHtml(copy.historyCount)}</span>
+      </div>
+      <form class="payroll-history-filters" data-payroll-history-filter>
+        <label>
+          <span>${escapeHtml(copy.historySearch)}</span>
+          <input name="query" type="search" value="${escapeHtml(payrollHistoryFilters.query)}" placeholder="${escapeHtml(copy.historySearch)}">
+        </label>
+        <label>
+          <span>${escapeHtml(copy.historyStatus)}</span>
+          <select name="status">
+            <option value="all"${status === 'all' ? ' selected' : ''}>${escapeHtml(copy.historyAll)}</option>
+            <option value="open"${status === 'open' ? ' selected' : ''}>${escapeHtml(copy.historyOpen)}</option>
+            <option value="settled"${status === 'settled' ? ' selected' : ''}>${escapeHtml(copy.historySettled)}</option>
+          </select>
+        </label>
+        <button class="button button-small" type="submit">${escapeHtml(copy.filterButton)}</button>
+        <button class="button button-small button-ghost" type="button" data-payroll-history-reset>${escapeHtml(copy.clearFilters)}</button>
+      </form>
+      ${history.hasMore ? `<p class="muted">${escapeHtml(archives.length)} / ${escapeHtml(history.totalCount)} ${escapeHtml(copy.historyCount)}</p>` : ''}
+      <div class="payroll-history-list">
+        ${filtered.length ? filtered.map((archive) => {
+          const totals = archive.totals || {};
+          const settled = (totals.userCount || 0) > 0 && (totals.unpaidCount || 0) === 0;
+          const isExpanded = expandedPayrollArchiveWeek === archive.weekStart;
+          return `
+            <details class="payroll-history-period" data-payroll-history-period="${escapeHtml(archive.weekStart)}"${isExpanded ? ' open' : ''}>
+              <summary>
+                <span>
+                  <strong>${escapeHtml(archive.weekStart)} → ${escapeHtml(archive.weekEnd)}</strong>
+                  <small>${escapeHtml(copy.archivedOn)} ${escapeHtml(formatSessionDate(archive.archivedAt))}</small>
+                </span>
+                <span class="payroll-history-period-totals">
+                  <strong>${escapeHtml(totals.totalAmountLabel || '')}</strong>
+                  <small>${escapeHtml(totals.paidCount || 0)}/${escapeHtml(totals.userCount || 0)} ${escapeHtml(copy.paid.toLowerCase())}</small>
+                  ${statusBadge(settled ? copy.historySettled : copy.historyOpen, settled)}
+                </span>
+              </summary>
+              ${isExpanded ? `<div class="payroll-history-period-body">
+                <div class="payroll-history-meta">
+                  <div><span>${escapeHtml(copy.totalHours)}</span><strong>${escapeHtml(totals.totalTimeLabel || '')}</strong></div>
+                  <div><span>${escapeHtml(copy.alreadyPaid)}</span><strong>${escapeHtml(totals.paidAmountLabel || '')}</strong></div>
+                  <div><span>${escapeHtml(copy.toPay)}</span><strong>${escapeHtml(totals.unpaidAmountLabel || '')}</strong></div>
+                  <div><span>${escapeHtml(copy.paymentProgress)}</span><strong>${escapeHtml(totals.completionPercent || 0)}%</strong></div>
+                </div>
+                <p class="payroll-history-context">
+                  ${archive.archivedByUserId ? `${escapeHtml(copy.archivedBy)} <strong>${escapeHtml(archive.archivedByDisplayName || archive.archivedByUserId)}</strong> · ` : ''}
+                  ${escapeHtml(copy.lastActivity)} ${escapeHtml(formatSessionDate(archive.lastActivityAt))}
+                </p>
+                ${payrollArchiveTable(archive, copy)}
+                <div class="payroll-event-log">
+                  <h4>${escapeHtml(copy.paymentJournal)}</h4>
+                  ${payrollArchiveJournal(archive, copy)}
+                </div>
+              </div>` : ''}
+            </details>
+          `;
+        }).join('') : `<p class="muted">${escapeHtml(copy.historyNoMatch)}</p>`}
+      </div>
+      ${history.hasMore ? `<button class="button button-ghost payroll-history-more" type="button" data-payroll-history-more>${escapeHtml(copy.loadMoreArchives)}</button>` : ''}
+    </section>
+  `;
+}
+
+function renderPayrollPanel(state) {
+  const payroll = state.payroll || {
+    weekStart: '',
+    weekEnd: '',
+    settings: { hourlyRate: 0, currency: '$' },
+    totals: {},
+    items: []
+  };
+  const copy = payrollCopy();
+  const payrollArchives = state.payrollArchives || { totalCount: 0, hasMore: false, items: [] };
+  const currentArchive = (payrollArchives.items || []).find((archive) => archive.weekStart === payroll.weekStart) || null;
+
+  return `
+    <section class="dashboard-panel payroll-panel">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">${escapeHtml(copy.eyebrow)}</p>
+          <h2>${escapeHtml(copy.title)}</h2>
+          <p class="muted">${escapeHtml(copy.description)}</p>
+        </div>
+        <span class="status-badge">${escapeHtml(payroll.totals?.unpaidCount || 0)} ${escapeHtml(copy.unpaid)}</span>
+      </div>
+      <div class="payroll-grid">
+        <form data-action-form="set-payroll-settings">
+          ${labelHelp(copy.rateLabel, copy.rateHelp)}
+          <input name="hourlyRate" type="number" min="0" step="0.01" value="${escapeHtml(payroll.settings?.hourlyRate || 0)}">
+          ${labelHelp(copy.currencyLabel, copy.currencyHelp)}
+          <input name="currency" maxlength="8" value="${escapeHtml(payroll.settings?.currency || '$')}">
+          <button class="button" type="submit">${escapeHtml(copy.update)}</button>
+        </form>
+        <article class="inline-form payroll-summary-card">
+          ${labelHelp(copy.summary, copy.note)}
+          ${payrollSummaryCards(payroll, copy)}
+        </article>
+      </div>
+      <form class="payroll-archive-form" data-action-form="archive-payroll">
+        <div>
+          ${labelHelp(copy.archive, copy.archiveHelp)}
+          ${currentArchive ? `<small>${escapeHtml(copy.currentArchive)} ${escapeHtml(formatSessionDate(currentArchive.archivedAt))}</small>` : ''}
+        </div>
+        <button class="button button-ghost" type="submit">${escapeHtml(currentArchive ? copy.updateArchiveButton : copy.archiveButton)}</button>
+      </form>
+      ${payrollTable(payroll, copy)}
+      ${payrollArchiveHistory(payrollArchives, copy)}
+    </section>
+  `;
+}
+
+function renderPremiumPayrollPanel(state, premiumBadge, premiumTag) {
+  const payroll = state.payroll || {
+    weekStart: '',
+    weekEnd: '',
+    settings: { hourlyRate: 0, currency: '$' },
+    totals: {},
+    items: []
+  };
+  const copy = payrollCopy();
+  const roleOptions = optionList(state.roles || [], null, copy.roleLabel);
+  return `
+    <section class="dashboard-panel payroll-panel premium-view-panel">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Barème des salaires</p>
+          <h2>Salaires par grade et ajustements</h2>
+          <p class="muted">Applique des taux propres à chaque grade et consigne les primes, retenues ou corrections.</p>
+        </div>
+        ${premiumBadge}
+      </div>
+      <div class="payroll-grid payroll-premium-grid">
+        <article class="inline-form">
+          ${labelHelp(copy.roleRates, copy.roleRatesHelp, ` ${premiumTag}`)}
+          <form data-action-form="set-payroll-role-rate">
+            <select name="roleId">${roleOptions}</select>
+            <input name="hourlyRate" type="number" min="0" step="0.01" placeholder="${escapeHtml(copy.roleRateLabel)}">
+            <button class="button" type="submit">${escapeHtml(copy.setRoleRate)}</button>
+          </form>
+          ${payrollRoleRatesList(payroll, copy)}
+        </article>
+        <article class="inline-form">
+          ${labelHelp(copy.adjustments, copy.adjustmentsHelp, ` ${premiumTag}`)}
+          <form data-action-form="add-payroll-adjustment">
+            <input name="userId" placeholder="${escapeHtml(copy.userId)}">
+            <select name="adjustmentType">
+              <option value="bonus">${escapeHtml(copy.bonus)}</option>
+              <option value="deduction">${escapeHtml(copy.deduction)}</option>
+              <option value="correction">${escapeHtml(copy.correction)}</option>
+            </select>
+            <input name="amount" type="number" min="0.01" step="0.01" placeholder="${escapeHtml(copy.amount)}">
+            <input name="reason" maxlength="240" placeholder="${escapeHtml(copy.reason)}">
+            <button class="button" type="submit">${escapeHtml(copy.addAdjustment)}</button>
+          </form>
+          ${payrollAdjustmentList(payroll, copy)}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function renderFreeServicePanel(state) {
+  return `
+    <section class="dashboard-panel service-overview-panel" id="service">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Registre</p>
+          <h2>Registre de service</h2>
+          <p class="muted">Suivi des fiches agent, déploiements actifs, cycles hebdomadaires et salaires.</p>
+        </div>
+        <span class="status-badge">Noctigarde</span>
+      </div>
+      ${metricCards(state)}
+      <div class="service-insights">
+        <article class="service-insight service-insight-wide">
+          <div class="service-card-heading">
+            <div>
+              <p class="eyebrow">Déploiement</p>
+              <h3>Agents en service</h3>
+            </div>
+            <strong>${escapeHtml(state.summary.activeCount)}</strong>
+          </div>
+          ${activeServicesPanel(state)}
+        </article>
+        <article class="service-insight">
+          <div class="service-card-heading">
+            <div>
+              <p class="eyebrow">Registre général</p>
+              <h3>Présence cumulée</h3>
+            </div>
+          </div>
+          ${leaderboardChart(state.topService || [], 'Aucun temps total enregistré.')}
+        </article>
+        <article class="service-insight">
+          <div class="service-card-heading">
+            <div>
+              <p class="eyebrow">Cycle courant</p>
+              <h3>Sept derniers jours</h3>
+            </div>
+          </div>
+          ${leaderboardChart(state.topWeek || [], 'Aucune session cette semaine.')}
+        </article>
+        <article class="service-insight service-insight-wide">
+          <div class="service-card-heading">
+            <div>
+              <p class="eyebrow">Fiche personnelle</p>
+              <h3>Ton registre</h3>
+            </div>
+          </div>
+          ${personalHistory(state)}
+        </article>
+      </div>
+    </section>
+
+    ${renderPayrollPanel(state)}
+
+    <section class="dashboard-panel service-actions-panel">
+      <div class="panel-heading">
+        <p class="eyebrow">Régie</p>
+        <h2>Actions de service</h2>
+      </div>
+      <div class="form-grid">
+        <form data-action-form="start-service">
+          ${labelHelp('Ouvrir le service d’un agent', 'Démarre manuellement le service d’un membre avec son ID et applique le grade de service si possible.')}
+          <input name="userId" placeholder="ID du membre" required>
+          <button class="button" type="submit">Prendre poste</button>
+        </form>
+        <form data-action-form="end-service">
+          ${labelHelp('Fermer le service d’un agent', 'Arrête le service en cours d’un membre, calcule la durée et ajoute ce temps à son registre.')}
+          <input name="userId" placeholder="ID du membre" required>
+          <button class="button" type="submit">Fin de poste</button>
+        </form>
+        <form data-action-form="reset-user">
+          ${labelHelp('Remise à zéro individuelle', 'Remet à zéro les heures d’une seule personne avec son ID, même si elle a quitté le serveur.')}
+          <input name="userId" placeholder="ID, même si la personne est partie" required>
+          <button class="button" type="submit">Réinitialiser</button>
+        </form>
+      </div>
+    </section>
+  `;
+}
+
+function renderPremiumServicePanel(state, premiumBadge, premiumTag) {
+  return `
+    <section class="dashboard-panel inline-premium-panel premium-view-panel" id="service">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Intendance</p>
+          <h2>Registre complet</h2>
+          <p class="muted">Synchronisation, bilans et outils d’export pour toute l’équipe.</p>
+        </div>
+        ${premiumBadge}
+      </div>
+      <div class="form-grid premium-service-actions">
+        <form data-action-form="sync-service">
+          ${labelHelp('Synchronisation du registre', 'Répare les écarts entre agents en service, grades et registre de service.', ` ${premiumTag}`)}
+          <button class="button" type="submit">Synchroniser</button>
+        </form>
+      </div>
+      ${premiumServiceRoadmap(state, premiumTag)}
+    </section>
+
+    ${renderPremiumPayrollPanel(state, premiumBadge, premiumTag)}
+  `;
+}
+
+function renderServicePanel(state, premiumBadge, premiumTag) {
+  return `${renderFreeServicePanel(state)}${renderPremiumServicePanel(state, premiumBadge, premiumTag)}`;
+}
+
+function customEmbedQuota(state) {
+  const quota = state.customEmbeds?.quota;
+  const language = document.documentElement.lang === 'en' ? 'en' : 'fr';
+
+  if (!quota) {
+    return language === 'en' ? 'Quota unavailable' : 'Quota indisponible';
+  }
+
+  if (quota.unlimited) {
+    return language === 'en'
+      ? 'Unlimited creations, edits, deletions, and media.'
+      : 'Créations, modifications, suppressions et médias sans limite.';
+  }
+
+  return language === 'en'
+    ? `${quota.used}/${quota.limit} active embeds used. Remaining: ${quota.remaining}. Edits are unlimited.`
+    : `${quota.used}/${quota.limit} embeds actifs utilisés. Restant : ${quota.remaining}. Les modifications sont illimitées.`;
+}
+
+function customEmbedList(state) {
+  const items = state.customEmbeds?.items || [];
+
+  if (items.length === 0) {
+    return '<p class="muted">Aucun embed Noctigarde créé depuis ce dashboard ou Discord.</p>';
+  }
+
+  return `
+    <ul class="compact-list embed-list">
+      ${items.map((item) => {
+        const channel = state.channels.find((candidate) => candidate.id === item.channelId);
+        return `
+          <li>
+            <code>${escapeHtml(item.messageId)}</code>
+            <span>${escapeHtml(item.title)} - ${channel ? `#${escapeHtml(channel.name)}` : escapeHtml(item.channelId)}</span>
+          </li>
+        `;
+      }).join('')}
+    </ul>
+  `;
+}
+
+function renderEmbedsPanel(state, channelOptions, pingRoleOptions, premiumBadge) {
+  const modeLabel = 'Studio d’annonces';
+  const title = 'Embeds Noctigarde';
+  const createHelp = 'Publie une annonce sous l’identité de Noctigarde, avec image ou miniature importée depuis ton appareil.';
+  const deleteHelp = 'Supprime un embed géré par Noctigarde avec son ID de message.';
+
+  return `
+    <section class="dashboard-panel module-panel announcements-panel" id="embeds">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">${escapeHtml(modeLabel)}</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p class="muted">${escapeHtml(customEmbedQuota(state))}</p>
+        </div>
+        ${premiumBadge}
+      </div>
+      <div class="form-grid module-form-grid">
+        <form data-action-form="custom-embed-create">
+          ${labelHelp('Créer un embed Noctigarde', createHelp)}
+          <select name="channelId">${channelOptions}</select>
+          <input name="title" placeholder="Titre" maxlength="256" required>
+          <textarea name="description" placeholder="Message de l'annonce" maxlength="4000" required></textarea>
+          <input name="color" placeholder="Couleur : rose, cyan, #ff2d9a">
+          <select name="roleId">${pingRoleOptions}</select>
+          <input name="imageUrl" placeholder="Image URL optionnelle">
+          ${fileUploadControl('imageFile', 'Photo principale', 'Aucune photo sélectionnée', 'Importer')}
+          <input name="thumbnailUrl" placeholder="Miniature URL optionnelle">
+          ${fileUploadControl('thumbnailFile', 'Miniature', 'Aucune miniature sélectionnée', 'Importer')}
+          <p class="form-hint">PNG, JPG, WebP ou GIF, 8 Mo maximum au total. Noctigarde optimise automatiquement les images en WebP.</p>
+          <input name="footer" placeholder="Footer optionnel">
+          <button class="button" type="submit">Publier l’embed</button>
+        </form>
+        <form data-action-form="custom-embed-edit">
+          ${labelHelp('Modifier un embed existant', 'Modifie un embed Noctigarde déjà envoyé avec son ID de message.')}
+          <select name="channelId">${channelOptions}</select>
+          <input name="messageId" placeholder="ID du message embed" required>
+          <input name="title" placeholder="Nouveau titre">
+          <textarea name="description" placeholder="Nouveau message"></textarea>
+          <input name="color" placeholder="Nouvelle couleur">
+          <input name="imageUrl" placeholder="Nouvelle image URL, ou retirer">
+          ${fileUploadControl('imageFile', 'Nouvelle photo principale', 'Aucune nouvelle photo', 'Remplacer')}
+          <input name="thumbnailUrl" placeholder="Nouvelle miniature URL, ou retirer">
+          ${fileUploadControl('thumbnailFile', 'Nouvelle miniature', 'Aucune nouvelle miniature', 'Remplacer')}
+          <p class="form-hint">Un fichier choisi ici remplace l’URL indiquée pour l’image ou la miniature.</p>
+          <input name="footer" placeholder="Nouveau footer, ou retirer">
+          <button class="button" type="submit">Modifier</button>
+        </form>
+        <form data-action-form="custom-embed-delete">
+          ${labelHelp('Supprimer un embed Noctigarde', deleteHelp)}
+          <select name="channelId">${channelOptions}</select>
+          <input name="messageId" placeholder="ID du message embed" required>
+          <button class="button button-ghost" type="submit">Supprimer</button>
+        </form>
+        <article class="inline-form">
+          ${labelHelp('Embeds gérés', 'Liste les embeds que Noctigarde peut encore modifier ou supprimer depuis le dashboard.')}
+          ${customEmbedList(state)}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function dossierTypeLabel(type) {
+  const labels = {
+    support: 'Support',
+    report: 'Signalement',
+    recruitment: 'Recrutement',
+    partnership: 'Partenariat',
+    other: 'Autre',
+    complaint: 'Signalement',
+    admin: 'Autre',
+    bug: 'Autre'
+  };
+
+  return labels[type] || 'Support';
+}
+
+function dossierStatusLabel(status) {
+  const labels = {
+    open: 'Ouvert',
+    in_progress: 'En cours',
+    waiting: 'En attente',
+    resolved: 'Résolu',
+    closed: 'Fermé'
+  };
+
+  return labels[status] || 'Ouvert';
+}
+
+function dossierPriorityLabel(priority) {
+  const labels = {
+    normal: 'Normal',
+    important: 'Important',
+    urgent: 'Urgent'
+  };
+
+  return labels[priority] || 'Normal';
+}
+
+function dossierQuotaText(state) {
+  const quota = state.dossiers?.panelQuota;
+  const language = document.documentElement.lang === 'en' ? 'en' : 'fr';
+
+  if (!quota) {
+    return language === 'en' ? 'Quota unavailable' : 'Quota indisponible';
+  }
+
+  if (quota.unlimited) {
+    return language === 'en'
+      ? 'Unlimited reception panels, complete history, forms, routing, and prepared replies.'
+      : 'Bureaux illimités, historique complet, formulaires, routage et réponses préparées.';
+  }
+
+  return language === 'en'
+    ? `${quota.used}/${quota.limit} published panel. ${quota.remaining} remaining. Visible history: ${state.dossiers?.historyLimit || 10} tickets.`
+    : `${quota.used}/${quota.limit} panneau publié. ${quota.remaining} restant. Historique visible : ${state.dossiers?.historyLimit || 10} dossiers.`;
+}
+
+function categoryOptionList(categories = [], selectedId = null) {
+  const options = [`<option value="">Même catégorie que le panneau</option>`];
+
+  for (const category of categories) {
+    const selected = category.id === selectedId ? ' selected' : '';
+    options.push(`<option value="${escapeHtml(category.id)}"${selected}>${escapeHtml(category.name)}</option>`);
+  }
+
+  return options.join('');
+}
+
+function dossierSettingForType(state, type) {
+  return (state.dossiers?.settings || []).find((setting) => setting.type === type) || null;
+}
+
+function dossierTypeRolesSettings(state) {
+  const types = [
+    ['support', 'Support'],
+    ['report', 'Signalement'],
+    ['recruitment', 'Recrutement'],
+    ['partnership', 'Partenariat'],
+    ['other', 'Autre']
+  ];
+
+  return `
+    <article class="inline-form dossier-type-roles">
+      <div class="dossier-access-heading">
+        <div>
+          <p class="eyebrow">Accès par catégorie</p>
+          <h3>Une règle simple</h3>
+        </div>
+        <div class="dossier-access-rules" aria-label="Fonctionnement des accès">
+          <div class="dossier-access-rule">
+            <span class="dossier-access-rule-number">1</span>
+            <div>
+              <strong>Aucun rôle choisi dans une catégorie</strong>
+              <p>Tous les responsables Noctigarde peuvent voir et traiter ses dossiers.</p>
+            </div>
+          </div>
+          <div class="dossier-access-rule is-restricted">
+            <span class="dossier-access-rule-number">2</span>
+            <div>
+              <strong>Au moins un rôle choisi</strong>
+              <p>Seuls les rôles affichés sur cette catégorie y accèdent côté équipe.</p>
+            </div>
+          </div>
+        </div>
+        <p class="dossier-access-constant"><strong>Toujours autorisés :</strong> le demandeur, les personnes invitées et les administrateurs Discord.</p>
+        <p class="dossier-access-example"><strong>Exemple :</strong> ajoute le rôle Recruteur dans “Recrutement”. Les autres responsables ne verront plus les dossiers de recrutement.</p>
+      </div>
+      <div class="dossier-category-grid dossier-access-grid">
+        ${types.map(([type, label]) => {
+          const assigned = (state.dossiers?.typeRoles || [])
+            .filter(item => item.type === type)
+            .map(item => resolveRole(state, item.roleId))
+            .filter(Boolean);
+          const assignedRoleIds = new Set(assigned.map(role => role.id));
+          const availableRoles = (state.roles || []).filter(role => !assignedRoleIds.has(role.id));
+          const roleOptions = optionList(availableRoles, null, 'Sélectionner un rôle Discord');
+          const restricted = assigned.length > 0;
+          return `
+            <section class="dossier-setting-block dossier-access-card${restricted ? ' is-restricted' : ' is-general'}">
+              <header>
+                <strong>${escapeHtml(label)}</strong>
+                <span class="dossier-access-badge ${restricted ? 'is-restricted' : 'is-general'}">${restricted ? 'Seulement ces rôles' : 'Tous les responsables'}</span>
+              </header>
+              <p class="dossier-access-summary">${restricted
+                ? 'Cette catégorie est limitée. Les autres responsables Noctigarde n’y ont pas accès.'
+                : 'Aucun rôle spécifique : tous les responsables Noctigarde ont accès à cette catégorie.'}</p>
+              <div class="role-chip-row dossier-access-role-list">
+                ${restricted ? assigned.map((role) => `
+                  <form data-action-form="remove-dossier-type-role" class="role-chip">
+                    <input type="hidden" name="dossierType" value="${escapeHtml(type)}">
+                    <input type="hidden" name="roleId" value="${escapeHtml(role.id)}">
+                    <span>@${escapeHtml(role.name)}</span>
+                    <button type="submit" aria-label="Retirer le rôle ${escapeHtml(role.name)} de la catégorie ${escapeHtml(label)}">Retirer</button>
+                  </form>
+                `).join('') : '<div class="dossier-general-access-note"><strong>Accès actuel</strong><span>Tous les responsables Noctigarde</span></div>'}
+              </div>
+              <form data-action-form="add-dossier-type-role" class="dossier-type-access-form">
+                <input type="hidden" name="dossierType" value="${escapeHtml(type)}">
+                <label>
+                  <span>${restricted ? 'Autoriser un rôle supplémentaire' : 'Limiter cette catégorie à un rôle'}</span>
+                  <select name="roleId" required${availableRoles.length ? '' : ' disabled'}>${roleOptions}</select>
+                </label>
+                <button class="button button-small" type="submit"${availableRoles.length ? '' : ' disabled'}>${restricted ? 'Autoriser ce rôle aussi' : 'Limiter à ce rôle'}</button>
+              </form>
+              ${restricted ? '<small class="dossier-access-footnote">En retirant le dernier rôle, tous les responsables Noctigarde retrouveront automatiquement l’accès.</small>' : ''}
+            </section>
+          `;
+        }).join('')}
+      </div>
+    </article>
+  `;
+}
+
+function dossierPremiumSettings(state, premiumTag) {
+  const types = [
+    ['support', 'Support'],
+    ['report', 'Signalement'],
+    ['recruitment', 'Recrutement'],
+    ['partnership', 'Partenariat'],
+    ['other', 'Autre']
+  ];
+  const disabled = state.advanced ? '' : ' disabled';
+
+  return `
+    <article class="inline-form dossier-premium-settings">
+      ${labelHelp('Catégories par type', 'Envoie chaque type de dossier dans une catégorie Discord différente, par exemple recrutement dans une catégorie staff dédiée.')}
+      <div class="dossier-category-grid">
+        ${types.map(([type, label]) => {
+          const setting = dossierSettingForType(state, type);
+          const questionsText = (setting?.questions || []).map(question => question.label).join('\n');
+
+          return `
+            <section class="dossier-setting-block">
+              <strong>${escapeHtml(label)}</strong>
+              <form data-action-form="set-dossier-category">
+                <input type="hidden" name="dossierType" value="${escapeHtml(type)}">
+                <select name="categoryId"${disabled}>${categoryOptionList(state.categories || [], setting?.categoryId || '')}</select>
+                <button class="button button-small" type="submit"${disabled}>Catégorie</button>
+              </form>
+              <form data-action-form="set-dossier-questions">
+                <input type="hidden" name="dossierType" value="${escapeHtml(type)}">
+                <textarea name="questionsText" rows="4" maxlength="300" placeholder="Une question obligatoire par ligne, 3 maximum"${disabled}>${escapeHtml(questionsText)}</textarea>
+                <button class="button button-small" type="submit"${disabled}>Formulaire</button>
+              </form>
+              <form data-action-form="set-dossier-sla" class="dossier-sla-form">
+                <input type="hidden" name="dossierType" value="${escapeHtml(type)}">
+                <label>Première réponse, min<input type="number" name="slaFirstResponseMinutes" min="5" max="10080" value="${escapeHtml(setting?.slaFirstResponseMinutes || 60)}"${disabled}></label>
+                <label>Résolution, min<input type="number" name="slaResolutionMinutes" min="30" max="43200" value="${escapeHtml(setting?.slaResolutionMinutes || 1440)}"${disabled}></label>
+                <button class="button button-small" type="submit"${disabled}>Délais</button>
+              </form>
+            </section>
+          `;
+        }).join('')}
+      </div>
+    </article>
+  `;
+}
+
+function dossierTemplatesPanel(state, premiumTag) {
+  const templates = state.dossiers?.templates || [];
+  const typeOptions = [
+    ['', 'Tous les dossiers'],
+    ['support', 'Support'],
+    ['report', 'Signalement'],
+    ['recruitment', 'Recrutement'],
+    ['partnership', 'Partenariat'],
+    ['other', 'Autre']
+  ].map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+
+  return `
+    <article class="inline-form dossier-templates-panel">
+      ${labelHelp('Réponses préparées', 'Crée des réponses réutilisables, puis envoie-les en un clic depuis un dossier.', ` ${premiumTag}`)}
+      <form data-action-form="create-dossier-template" class="dossier-template-create">
+        <input name="templateName" maxlength="80" placeholder="Nom de la réponse" required>
+        <select name="dossierType">${typeOptions}</select>
+        <select name="templateKind">
+          <option value="reply">Réponse</option>
+          <option value="request_info">Demande de complément</option>
+          <option value="close">Message de clôture</option>
+        </select>
+        <textarea name="templateContent" rows="4" maxlength="1900" placeholder="Texte envoyé dans le dossier" required></textarea>
+        <button class="button" type="submit">Créer la réponse</button>
+      </form>
+      <div class="dossier-template-list">
+        ${templates.length ? templates.map(template => `
+          <div>
+            <span><strong>${escapeHtml(template.name)}</strong><small>${escapeHtml(template.type ? dossierTypeLabel(template.type) : 'Tous les dossiers')}</small></span>
+            <form data-action-form="delete-dossier-template">
+              <input type="hidden" name="templateId" value="${escapeHtml(template.id)}">
+              <button class="button button-small button-ghost" type="submit">Retirer</button>
+            </form>
+          </div>
+        `).join('') : '<p class="muted">Aucune réponse préparée.</p>'}
+      </div>
+    </article>
+  `;
+}
+
+function formatDossierMetric(value) {
+  if (!Number.isFinite(value) || value < 0) return 'Pas encore mesuré';
+  const minutes = Math.round(value / 60000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  return `${hours} h${remaining ? ` ${remaining} min` : ''}`;
+}
+
+function dossierStatsPanel(state, premiumTag) {
+  const stats = state.dossiers?.stats;
+  if (!stats) return '';
+  const typeVolumes = Object.entries(stats.byType || {})
+    .sort((a, b) => b[1] - a[1]);
+  const teamLoad = Object.entries(stats.byReferent || {})
+    .sort((a, b) => b[1] - a[1]);
+
+  return `
+    <article class="inline-form dossier-stats-panel">
+      ${labelHelp('Registre de l’équipe', 'Mesure la prise en charge et la résolution des dossiers.', ` ${premiumTag}`)}
+      <div class="dossier-stat-grid">
+        <div><span>Ouverts</span><strong>${escapeHtml(stats.open)}</strong></div>
+        <div><span>Sans référent</span><strong>${escapeHtml(stats.unassigned)}</strong></div>
+        <div><span>Première réponse</span><strong>${escapeHtml(formatDossierMetric(stats.averageFirstResponseMs))}</strong></div>
+        <div><span>Résolution moyenne</span><strong>${escapeHtml(formatDossierMetric(stats.averageResolutionMs))}</strong></div>
+      </div>
+      <div class="dossier-stat-details">
+        <div>
+          <strong>Volume par nature</strong>
+          ${typeVolumes.length ? `<ul>${typeVolumes.map(([type, count]) => `<li><span>${escapeHtml(dossierTypeLabel(type))}</span><strong>${escapeHtml(count)}</strong></li>`).join('')}</ul>` : '<p class="muted">Aucune donnée.</p>'}
+        </div>
+        <div>
+          <strong>Charge par référent</strong>
+          ${teamLoad.length ? `<ul>${teamLoad.map(([userId, count]) => `<li><code>${escapeHtml(userId)}</code><strong>${escapeHtml(count)}</strong></li>`).join('')}</ul>` : '<p class="muted">Aucun dossier attribué.</p>'}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function dossierRoles(state) {
+  return (state.dossiers?.roleIds || [])
+    .map((roleId) => resolveRole(state, roleId))
+    .filter(Boolean);
+}
+
+function dossierRoleList(state) {
+  const roles = dossierRoles(state);
+
+  if (roles.length === 0) {
+    return '<p class="muted">Aucun rôle supplémentaire n’est ajouté ici. Les responsables déjà autorisés dans Noctigarde et les administrateurs Discord conservent l’accès général.</p>';
+  }
+
+  return `
+    <div class="role-chip-row">
+      ${roles.map((role) => `
+        <span class="role-chip">
+          @${escapeHtml(role.name)}
+          <button type="button" data-action-click="remove-dossier-role" data-role-id="${escapeHtml(role.id)}">Retirer</button>
+        </span>
+      `).join('')}
+    </div>
+  `;
+}
+
+function dossierStatusOptions(selectedStatus = '') {
+  const options = [
+    ['', 'Tous les statuts'],
+    ['open', 'Ouvert'],
+    ['in_progress', 'En cours'],
+    ['waiting', 'En attente'],
+    ['resolved', 'Résolu'],
+    ['closed', 'Fermé']
+  ];
+
+  return options
+    .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === selectedStatus ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+}
+
+function dossierStatusActionOptions(selectedStatus = 'in_progress') {
+  const options = [
+    ['open', 'Ouvert'],
+    ['in_progress', 'En cours'],
+    ['waiting', 'En attente'],
+    ['resolved', 'Résolu']
+  ];
+
+  return options
+    .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === selectedStatus ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+}
+
+function dossierMatchesFilters(item) {
+  const query = String(dossierFilters.query || '').trim().toLocaleLowerCase('fr');
+  const userId = String(dossierFilters.userId || '').trim();
+  const referentId = String(dossierFilters.referentId || '').trim();
+  const status = String(dossierFilters.status || '').trim();
+  const type = String(dossierFilters.type || '').trim();
+  const priority = String(dossierFilters.priority || '').trim();
+  const queue = String(dossierFilters.queue || '').trim();
+  const from = dossierFilters.dateFrom ? new Date(`${dossierFilters.dateFrom}T00:00:00`).getTime() : null;
+  const to = dossierFilters.dateTo ? new Date(`${dossierFilters.dateTo}T23:59:59`).getTime() : null;
+
+  if (query) {
+    const localText = [item.id, item.subject, item.description, item.ownerUserId, item.referentUserId]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('fr');
+    const archiveMatch = dossierArchiveMatches.some(match => String(match.dossierId) === String(item.id));
+    if (!localText.includes(query) && !archiveMatch) return false;
+  }
+
+  if (userId && ![item.ownerUserId, item.openerUserId].includes(userId)) {
+    return false;
+  }
+
+  if (referentId && item.referentUserId !== referentId) {
+    return false;
+  }
+
+  if (status && item.status !== status) {
+    return false;
+  }
+
+  if (type && item.type !== type) return false;
+  if (priority && item.priority !== priority) return false;
+  if (queue && item.queue !== queue) return false;
+
+  const createdAt = new Date(item.createdAt).getTime();
+  if (from && createdAt < from) return false;
+  if (to && createdAt > to) return false;
+
+  return true;
+}
+
+function dossierFiltersPanel(state) {
+  const premium = Boolean(state.advanced);
+  return `
+    <form class="audit-filters dossier-filters" data-dossier-filter>
+      <div class="audit-field">
+        ${labelHelp('Recherche', premium ? 'Recherche le sujet, un membre et le contenu des archives.' : 'Recherche le sujet ou un membre dans les dossiers visibles.')}
+        <input name="query" placeholder="Sujet, membre, contenu" value="${escapeHtml(dossierFilters.query || '')}">
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Demandeur', 'Filtre les dossiers ouverts par un ID Discord précis.')}
+        <input name="userId" placeholder="ID Discord" value="${escapeHtml(dossierFilters.userId || '')}">
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Référent', 'Filtre les dossiers pris en charge par un membre du staff.')}
+        <input name="referentId" placeholder="ID Discord référent" value="${escapeHtml(dossierFilters.referentId || '')}">
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Statut', 'Affiche seulement les dossiers ouverts, en cours, en attente, résolus ou fermés.')}
+        <select name="status">${dossierStatusOptions(dossierFilters.status || '')}</select>
+      </div>
+      <div class="audit-field">
+        <label>Nature</label>
+        <select name="type">
+          <option value="">Toutes</option>
+          ${['support', 'report', 'recruitment', 'partnership', 'other'].map(type => `<option value="${type}"${dossierFilters.type === type ? ' selected' : ''}>${escapeHtml(dossierTypeLabel(type))}</option>`).join('')}
+        </select>
+      </div>
+      <div class="audit-field">
+        <label>Priorité</label>
+        <select name="priority">
+          <option value="">Toutes</option>
+          ${['normal', 'important', 'urgent'].map(priority => `<option value="${priority}"${dossierFilters.priority === priority ? ' selected' : ''}>${escapeHtml(dossierPriorityLabel(priority))}</option>`).join('')}
+        </select>
+      </div>
+      <div class="audit-field">
+        <label>File</label>
+        <select name="queue">
+          <option value="">Toutes</option>
+          <option value="unassigned"${dossierFilters.queue === 'unassigned' ? ' selected' : ''}>Sans référent</option>
+          <option value="waiting_staff"${dossierFilters.queue === 'waiting_staff' ? ' selected' : ''}>Attend l’équipe</option>
+          <option value="waiting_requester"${dossierFilters.queue === 'waiting_requester' ? ' selected' : ''}>Attend le demandeur</option>
+          <option value="overdue"${dossierFilters.queue === 'overdue' ? ' selected' : ''}>Sans réponse depuis 24 h</option>
+          <option value="closed"${dossierFilters.queue === 'closed' ? ' selected' : ''}>Clos</option>
+        </select>
+      </div>
+      ${premium ? `
+        <div class="audit-field"><label>Depuis</label><input type="date" name="dateFrom" value="${escapeHtml(dossierFilters.dateFrom || '')}"></div>
+        <div class="audit-field"><label>Jusqu’au</label><input type="date" name="dateTo" value="${escapeHtml(dossierFilters.dateTo || '')}"></div>
+      ` : ''}
+      <div class="audit-actions">
+        <button class="button" type="submit">Filtrer les dossiers</button>
+        <button class="button button-ghost" type="button" data-dossier-reset>Réinitialiser</button>
+      </div>
+    </form>
+  `;
+}
+
+function dossierQueueLabel(queue) {
+  return {
+    unassigned: 'Sans référent',
+    waiting_staff: 'Attend l’équipe',
+    waiting_requester: 'Attend le demandeur',
+    overdue: 'Sans réponse depuis 24 h',
+    closed: 'Clos'
+  }[queue] || 'Attend l’équipe';
+}
+
+function dossierTemplateOptions(state, item) {
+  return (state.dossiers?.templates || [])
+    .filter(template => !template.type || template.type === item.type)
+    .map(template => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`)
+    .join('');
+}
+
+function dossierArchiveExcerpt(item) {
+  return item.archiveExcerpt
+    || dossierArchiveMatches.find(match => String(match.dossierId) === String(item.id))?.excerpt
+    || null;
+}
+
+function dossierDetailRow(state, item) {
+  if (String(expandedDossierId) !== String(item.id)) {
+    return '';
+  }
+
+  const isOpen = item.status !== 'closed';
+  const templateOptions = dossierTemplateOptions(state, item);
+  const canReopen = state.advanced && item.reopenUntil && new Date(item.reopenUntil).getTime() > Date.now();
+  const archiveExcerpt = dossierArchiveExcerpt(item);
+
+  return `
+    <tr class="case-detail-row dossier-detail-row">
+      <td colspan="7">
+        <div class="case-detail-card">
+          <div>
+            <span>Dossier</span>
+            <strong>#${escapeHtml(item.id)}</strong>
+          </div>
+          <div>
+            <span>Type</span>
+            <strong>${escapeHtml(dossierTypeLabel(item.type))}</strong>
+          </div>
+          <div>
+            <span>Priorité</span>
+            <strong>${escapeHtml(dossierPriorityLabel(item.priority))}</strong>
+          </div>
+          <div>
+            <span>Ouvert le</span>
+            <strong>${escapeHtml(formatAuditDate(item.createdAt))}</strong>
+          </div>
+          <div>
+            <span>Fermé le</span>
+            <strong>${escapeHtml(item.closedAt ? formatAuditDate(item.closedAt) : 'Encore ouvert')}</strong>
+          </div>
+          <div>
+            <span>Retrait du salon</span>
+            <strong>${escapeHtml(item.deletionScheduledAt ? formatAuditDate(item.deletionScheduledAt) : 'Non planifié')}</strong>
+          </div>
+          <div>
+            <span>File</span>
+            <strong>${escapeHtml(dossierQueueLabel(item.queue))}</strong>
+          </div>
+          <div class="case-detail-wide">
+            <span>Sujet</span>
+            <p>${escapeHtml(item.subject || 'Aucun sujet enregistré.')}</p>
+          </div>
+          <div class="case-detail-wide">
+            <span>Description</span>
+            <p>${escapeHtml(item.description || 'Aucune description enregistrée.')}</p>
+          </div>
+          ${(item.formAnswers || []).map(answer => `
+            <div class="case-detail-wide"><span>${escapeHtml(answer.label)}</span><p>${escapeHtml(answer.value)}</p></div>
+          `).join('')}
+          ${item.closedAt ? `
+            <div class="case-detail-wide"><span>Motif de clôture</span><p>${escapeHtml(item.closeReason || 'Non renseigné')}</p></div>
+            <div class="case-detail-wide"><span>Résolution</span><p>${escapeHtml(item.resolutionSummary || 'Non renseignée')}</p></div>
+          ` : ''}
+          ${item.archivedAt ? `
+            <div class="case-detail-wide dossier-archive-summary">
+              <span>Archive confirmée</span>
+              <p>${escapeHtml(item.archiveMessageCount)} messages, ${escapeHtml(item.archiveAttachmentCount)} pièces jointes et ${escapeHtml(item.archiveEmbedCount)} contenus intégrés.</p>
+              <a class="button button-small button-ghost" href="/api/guilds/${encodeURIComponent(state.guild.id)}/dossiers/${encodeURIComponent(item.id)}/archive">Télécharger l’archive</a>
+            </div>
+          ` : ''}
+          ${archiveExcerpt ? `
+            <div class="case-detail-wide"><span>Correspondance dans l’archive</span><p>${escapeHtml(archiveExcerpt)}</p></div>
+          ` : ''}
+        </div>
+        <div class="dossier-detail-actions">
+          ${state.advanced && templateOptions && isOpen ? `
+            <form data-action-form="send-dossier-template">
+              <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+              <select name="templateId">${templateOptions}</select>
+              <button class="button button-small" type="submit">Envoyer la réponse</button>
+            </form>
+          ` : ''}
+          ${isOpen ? `
+            <form data-action-form="dossier-close" class="dossier-close-form">
+              <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+              <input name="closeReason" maxlength="500" placeholder="Motif de clôture" required>
+              <textarea name="resolutionSummary" rows="3" maxlength="1500" placeholder="Résumé de la résolution" required></textarea>
+              <button class="button button-small" type="submit">Archiver et clôturer</button>
+            </form>
+          ` : canReopen ? `
+            <form data-action-form="dossier-reopen">
+              <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+              <button class="button button-small" type="submit">Réouvrir le dossier</button>
+            </form>
+          ` : ''}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function dossierBoard(state, items) {
+  const columns = [
+    ['unassigned', 'Sans référent'],
+    ['waiting_staff', 'Attend l’équipe'],
+    ['waiting_requester', 'Attend le demandeur'],
+    ['overdue', 'Sans réponse depuis 24 h'],
+    ['closed', 'Clos']
+  ];
+
+  return `
+    <div class="dossier-board">
+      ${columns.map(([queue, label]) => {
+        const columnItems = items.filter(item => item.queue === queue);
+        return `
+          <section class="dossier-board-column">
+            <header><strong>${escapeHtml(label)}</strong><span>${columnItems.length}</span></header>
+            <div>
+              ${columnItems.length ? columnItems.map(item => {
+                const discordUrl = `https://discord.com/channels/${state.guild.id}/${item.channelId}`;
+                const templateOptions = dossierTemplateOptions(state, item);
+                const canReopen = state.advanced && item.reopenUntil && new Date(item.reopenUntil).getTime() > Date.now();
+                const archiveExcerpt = dossierArchiveExcerpt(item);
+                return `
+                  <article class="dossier-board-item">
+                    <div class="dossier-board-item-head">
+                      <span>#${escapeHtml(item.id)} · ${escapeHtml(dossierTypeLabel(item.type))}</span>
+                      <strong>${escapeHtml(dossierPriorityLabel(item.priority))}</strong>
+                    </div>
+                    <h4>${escapeHtml(item.subject || 'Sans sujet')}</h4>
+                    <p>${escapeHtml(item.description || 'Aucune description')}</p>
+                    <div class="dossier-board-item-actions">
+                      <a href="${escapeHtml(discordUrl)}" target="_blank" rel="noopener">Ouvrir Discord</a>
+                      <button class="button button-small button-ghost" type="button" data-dossier-detail="${escapeHtml(item.id)}">${String(expandedDossierId) === String(item.id) ? 'Réduire' : 'Détails'}</button>
+                    </div>
+                    ${String(expandedDossierId) === String(item.id) ? `
+                      <div class="dossier-board-expanded">
+                        <p><strong>Demandeur</strong><code>${escapeHtml(item.ownerUserId)}</code></p>
+                        <p><strong>Référent</strong>${item.referentUserId ? `<code>${escapeHtml(item.referentUserId)}</code>` : '<span>Aucun</span>'}</p>
+                        ${archiveExcerpt ? `<p class="dossier-archive-excerpt"><strong>Archive</strong><span>${escapeHtml(archiveExcerpt)}</span></p>` : ''}
+                        ${item.status !== 'closed' ? `
+                          ${state.advanced && templateOptions ? `
+                            <form data-action-form="send-dossier-template">
+                              <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                              <select name="templateId">${templateOptions}</select>
+                              <button class="button button-small" type="submit">Envoyer la réponse</button>
+                            </form>
+                          ` : ''}
+                          <form data-action-form="dossier-claim">
+                            <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                            <button class="button button-small" type="submit">Prendre en charge</button>
+                          </form>
+                          <form data-action-form="dossier-priority">
+                            <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                            <select name="priority">
+                              ${['normal', 'important', 'urgent'].map(priority => `<option value="${priority}"${item.priority === priority ? ' selected' : ''}>${escapeHtml(dossierPriorityLabel(priority))}</option>`).join('')}
+                            </select>
+                            <button class="button button-small button-ghost" type="submit">Modifier la priorité</button>
+                          </form>
+                          <form data-action-form="dossier-close" class="dossier-close-form">
+                            <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                            <input name="closeReason" maxlength="500" placeholder="Motif de clôture" required>
+                            <textarea name="resolutionSummary" rows="3" maxlength="1500" placeholder="Résumé de la résolution" required></textarea>
+                            <button class="button button-small" type="submit">Archiver et clôturer</button>
+                          </form>
+                        ` : `
+                          ${item.archivedAt ? `<a class="button button-small button-ghost" href="/api/guilds/${encodeURIComponent(state.guild.id)}/dossiers/${encodeURIComponent(item.id)}/archive">Télécharger l’archive</a>` : ''}
+                          ${canReopen ? `
+                            <form data-action-form="dossier-reopen">
+                              <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                              <button class="button button-small" type="submit">Réouvrir le dossier</button>
+                            </form>
+                          ` : ''}
+                        `}
+                      </div>
+                    ` : ''}
+                  </article>
+                `;
+              }).join('') : '<p class="muted">Aucun dossier</p>'}
+            </div>
+          </section>
+        `;
+      }).join('')}
+    </div>
+    <p class="muted case-limit-note">Affichage limité aux ${escapeHtml(state.dossiers?.historyLimit || 10)} derniers dossiers visibles pour ce serveur.</p>
+  `;
+}
+
+function dossierList(state) {
+  const items = (state.dossiers?.items || []).filter(dossierMatchesFilters);
+
+  if (items.length === 0) {
+    return '<p class="muted">Aucun dossier Noctigarde trouvé avec ces filtres.</p>';
+  }
+
+  if (dossierViewMode === 'board') {
+    return dossierBoard(state, items);
+  }
+
+  return `
+    <div class="table-shell dossier-table-shell">
+      <table class="dashboard-table dossier-table">
+        <thead>
+          <tr>
+            <th>Dossier</th>
+            <th>Type</th>
+            <th>Demandeur</th>
+            <th>Référent</th>
+            <th>Statut</th>
+            <th>Détail</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => {
+            const channel = resolveChannel(state, item.channelId);
+            const isOpen = item.status !== 'closed';
+            const discordUrl = `https://discord.com/channels/${state.guild.id}/${item.channelId}`;
+
+            return `
+              <tr>
+                <td>
+                  <strong>#${escapeHtml(item.id)}</strong>
+                  ${item.subject ? `<small>${escapeHtml(item.subject)}</small>` : ''}
+                  <small><a href="${escapeHtml(discordUrl)}" target="_blank" rel="noopener">${channel ? `#${escapeHtml(channel.name)}` : escapeHtml(item.channelId)}</a></small>
+                </td>
+                <td>${escapeHtml(dossierTypeLabel(item.type))}</td>
+                <td><code>${escapeHtml(item.ownerUserId)}</code></td>
+                <td>${item.referentUserId ? `<code>${escapeHtml(item.referentUserId)}</code>` : '<span class="muted">Aucun</span>'}</td>
+                <td>${statusBadge(dossierStatusLabel(item.status), isOpen)}</td>
+                <td><button class="button button-small button-ghost" type="button" data-dossier-detail="${escapeHtml(item.id)}">Voir</button></td>
+                <td>
+                  ${isOpen ? `
+                    <form class="table-action-form dossier-table-actions" data-action-form="dossier-status">
+                      <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                      <select name="dossierStatus">${dossierStatusActionOptions(item.status)}</select>
+                      <button class="button button-small button-ghost" type="submit">Statut</button>
+                    </form>
+                    <form class="table-action-form dossier-table-actions" data-action-form="dossier-priority">
+                      <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                      <select name="priority">
+                        ${['normal', 'important', 'urgent'].map(priority => `<option value="${priority}"${item.priority === priority ? ' selected' : ''}>${escapeHtml(dossierPriorityLabel(priority))}</option>`).join('')}
+                      </select>
+                      <button class="button button-small button-ghost" type="submit">Priorité</button>
+                    </form>
+                    <form class="table-action-form dossier-table-actions" data-action-form="dossier-claim">
+                      <input type="hidden" name="channelId" value="${escapeHtml(item.channelId)}">
+                      <button class="button button-small button-ghost" type="submit">Prendre</button>
+                    </form>
+                  ` : '<span class="muted">Archivé</span>'}
+                </td>
+              </tr>
+              ${dossierDetailRow(state, item)}
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted case-limit-note">Affichage limité aux ${escapeHtml(state.dossiers?.historyLimit || 10)} derniers dossiers visibles pour ce serveur.</p>
+  `;
+}
+
+function renderDossiersPanel(state, channelOptions, dossierRoleOptions, premiumBadge, premiumTag) {
+  return `
+    <section class="dashboard-panel module-panel dossiers-panel" id="dossiers">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Dossiers Noctigarde</p>
+          <h2>Bureau d’accueil et suivi complet</h2>
+          <p class="muted">Un membre ouvre une demande privée, puis l’équipe autorisée la suit, la route et l’archive depuis son salon réservé.</p>
+        </div>
+        <span class="status-badge">${escapeHtml(state.dossiers?.openCount || 0)} ouvert(s)</span>
+      </div>
+      ${dossierPermissionAlert(state)}
+      <div class="dashboard-alert is-ready dossier-quota-alert">
+        <strong>Capacité du serveur</strong>
+        <p>${escapeHtml(dossierQuotaText(state))}</p>
+      </div>
+      <div class="form-grid module-form-grid">
+        <form data-action-form="publish-dossier-panel">
+          ${labelHelp(
+            'Publier le bureau d’accueil',
+            'Publie un nouveau panneau de demandes privées.'
+          )}
+          <select name="channelId">${channelOptions}</select>
+          <button class="button" type="submit">Publier le bureau</button>
+        </form>
+        <form data-action-form="repair-dossier-panels" class="inline-form dossier-repair-form">
+          ${labelHelp('Vérifier les bureaux', 'Contrôle les panneaux Discord et libère automatiquement les références qui ont été supprimées.')}
+          <button class="button button-ghost" type="submit">Réparer le registre des panneaux</button>
+        </form>
+        <article class="inline-form dossier-explain-card">
+          ${labelHelp('À quoi ça sert ?', 'Un dossier Noctigarde est une demande privée pour le support, un signalement, un recrutement, un partenariat ou un autre sujet.')}
+          <p>Les responsables peuvent répondre, ajouter des intervenants, prendre le dossier en charge, corriger son statut, générer un compte rendu et le clôturer.</p>
+        </article>
+        <article class="inline-form dossier-explain-card">
+          ${labelHelp('Accès général aux dossiers', 'Ces rôles voient toutes les catégories, sauf celles que tu limites à des rôles précis plus bas.')}
+          <p class="form-hint">Les rôles ajoutés ici voient tous les dossiers qui ne possèdent pas de restriction particulière.</p>
+          <form data-action-form="add-dossier-role">
+            <select name="roleId">${dossierRoleOptions}</select>
+            <button class="button" type="submit">Ajouter à l’accès général</button>
+          </form>
+          ${dossierRoleList(state)}
+        </article>
+        ${dossierTypeRolesSettings(state)}
+        ${dossierStatsPanel(state, '')}
+        ${dossierPremiumSettings(state, '')}
+        ${dossierTemplatesPanel(state, '')}
+        <article class="inline-form dossier-list-card">
+          ${labelHelp('Historique des dossiers', 'Retrouve tout l’historique visible et affine la liste avec les filtres complets.')}
+          <div class="dossier-view-switch" role="group" aria-label="Affichage des dossiers">
+            <button class="button button-small${dossierViewMode === 'board' ? '' : ' button-ghost'}" type="button" data-dossier-view="board">Colonnes</button>
+            <button class="button button-small${dossierViewMode === 'table' ? '' : ' button-ghost'}" type="button" data-dossier-view="table">Tableau</button>
+          </div>
+          ${dossierFiltersPanel(state)}
+          ${dossierList(state)}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+const AUDIT_ACTION_LABELS = {
+  'set-language': 'Langue',
+  'set-server-preset': 'Profil serveur',
+  'set-service-role': 'Rôle de service',
+  'set-auto-role': 'Rôle automatique',
+  'disable-auto-role': 'Rôle automatique',
+  'set-log-channel': 'Salon de logs',
+  'set-status-channel': 'Salon statut',
+  'disable-status-channel': 'Salon statut',
+  'set-updates-channel': 'Salon des nouveautés',
+  'test-status-updates': 'Test des nouveautés',
+  'set-updates-role': 'Mention des nouveautés',
+  'clear-updates-role': 'Mention des nouveautés',
+  'set-status-updates': 'Nouveautés statut',
+  'enable-status-updates': 'Nouveautés statut',
+  'disable-status-updates': 'Nouveautés statut',
+  'publish-service-panel': 'Bureau de service',
+  'set-payroll-settings': 'Réglage des salaires',
+  'set-payroll-role-rate': 'Salaire par rôle',
+  'remove-payroll-role-rate': 'Salaire de rôle retiré',
+  'add-payroll-adjustment': 'Ajustement de salaire',
+  'mark-payroll-status': 'Statut du salaire',
+  'archive-payroll': 'Archive des salaires',
+  'toggle-payroll-paid': 'Salaire',
+  'publish-dossier-panel': 'Bureau d’accueil',
+  'configure-dossier-roles': 'Rôles dossiers',
+  'dossier-close': 'Dossier clôturé',
+  'dossier-status': 'Statut dossier',
+  'dossier-priority': 'Priorité dossier',
+  'dossier-claim': 'Dossier pris en charge',
+  'dossier-reopen': 'Dossier réouvert',
+  'repair-dossier-panels': 'Bureaux vérifiés',
+  'add-dossier-type-role': 'Responsable par dossier',
+  'remove-dossier-type-role': 'Responsable retiré',
+  'set-dossier-category': 'Catégorie dossier',
+  'set-dossier-questions': 'Formulaire dossier',
+  'set-dossier-sla': 'Délais dossier',
+  'create-dossier-template': 'Réponse préparée créée',
+  'delete-dossier-template': 'Réponse préparée retirée',
+  'send-dossier-template': 'Réponse préparée envoyée',
+  'add-dossier-role': 'Rôle ticket ajouté',
+  'remove-dossier-role': 'Rôle ticket retiré',
+  'dossier-add': 'Intervenant ajouté',
+  'dossier-remove': 'Intervenant retiré',
+  'dossier-transcript': 'Compte rendu dossier',
+  'add-command-role': 'Rôle autorisé ajouté',
+  'remove-command-role': 'Rôle autorisé retiré',
+  'set-automod-settings': 'Garde réglée',
+  'add-automod-word': 'Mot surveillé ajouté',
+  'remove-automod-word': 'Mot surveillé retiré',
+  'set-warning-escalation': 'Paliers d’avertissements',
+  'notification-state': 'Notification mise à jour',
+  'save-scheduled-announcement': 'Annonce programmée',
+  'approve-scheduled-announcement': 'Annonce validée',
+  'cancel-scheduled-announcement': 'Annonce annulée',
+  'save-report-schedule': 'Rapport automatique',
+  'remove-report-schedule': 'Rapport automatique retiré',
+  'run-simulation': 'Essai sans effet',
+  'run-validation': 'Validation Noctigarde',
+  'toggle-service': 'Bouton service',
+  'start-service': 'Prise de service',
+  'end-service': 'Fin de service',
+  'reset-user': 'Fiche réinitialisée',
+  'reset-guild': 'Registre réinitialisé',
+  'sync-service': 'Synchronisation',
+  'custom-embed-create': 'Embed créé',
+  'custom-embed-edit': 'Embed modifié',
+  'custom-embed-delete': 'Embed supprimé',
+  warn: 'Avertissement',
+  timeout: 'Mise au silence',
+  untimeout: 'Silence levé',
+  kick: 'Expulsion',
+  ban: 'Bannissement',
+  tempban: 'Bannissement temporaire',
+  unban: 'Bannissement levé',
+  clear: 'Purge',
+  purge: 'Purge',
+  lock: 'Salon verrouillé',
+  unlock: 'Salon rouvert',
+  slowmode: 'Salon ralenti',
+  case_edit: 'Dossier corrigé',
+  case_delete: 'Dossier retiré',
+  'edit-case': 'Dossier corrigé',
+  'delete-case': 'Dossier retiré',
+  unwarn: 'Avertissement retiré'
+};
+
+function auditActionOptions(selectedAction = '') {
+  const options = ['<option value="">Toutes les actions</option>'];
+
+  for (const [value, label] of Object.entries(AUDIT_ACTION_LABELS)) {
+    options.push(`<option value="${escapeHtml(value)}"${value === selectedAction ? ' selected' : ''}>${escapeHtml(label)}</option>`);
+  }
+
+  return options.join('');
+}
+
+function auditSourceOptions(selectedSource = '') {
+  const options = [
+    ['', 'Toutes les origines'],
+    ['dashboard', 'Site'],
+    ['discord', 'Discord']
+  ];
+
+  return options
+    .map(([value, label]) => `<option value="${escapeHtml(value)}"${value === selectedSource ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+}
+
+function formatAuditDate(value) {
+  if (!value) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(document.documentElement.lang === 'en' ? 'en-US' : 'fr-FR', {
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(new Date(value));
+}
+
+function auditStatusLabel(status) {
+  return status === 'failed' ? 'Échec' : 'Succès';
+}
+
+function auditSourceLabel(source) {
+  if (source === 'discord') {
+    return 'Discord';
+  }
+
+  return 'Site';
+}
+
+function auditTargetTypeLabel(type) {
+  const labels = {
+    user: 'Membre',
+    channel: 'Salon',
+    category: 'Catégorie',
+    role: 'Rôle',
+    message: 'Message',
+    case: 'Cas',
+    guild: 'Serveur'
+  };
+
+  return labels[type] || 'Cible';
+}
+
+function auditTargetLabel(item, state) {
+  if (!item.targetId) {
+    return 'Aucune cible';
+  }
+
+  if (item.targetType === 'role') {
+    const role = resolveRole(state, item.targetId);
+    return role ? `@${role.name}` : `Rôle ${item.targetId}`;
+  }
+
+  if (item.targetType === 'channel') {
+    const channel = resolveChannel(state, item.targetId);
+    return channel ? `#${channel.name}` : `Salon ${item.targetId}`;
+  }
+
+  if (item.targetType === 'category') {
+    const category = (state.categories || []).find((candidate) => candidate.id === item.targetId);
+    return category ? `Catégorie ${category.name}` : `Catégorie ${item.targetId}`;
+  }
+
+  if (item.targetType === 'guild') {
+    return item.guildName || item.guildId || item.targetId;
+  }
+
+  return item.targetId;
+}
+
+function auditActorLabel(item) {
+  if (item.actorUsername && item.actorUserId) {
+    return `${item.actorUsername} (${item.actorUserId})`;
+  }
+
+  return item.actorUsername || item.actorUserId || 'Inconnu';
+}
+
+function moderationFilterActionOptions(selectedAction = '') {
+  const actions = [
+    '',
+    'warn',
+    'timeout',
+    'untimeout',
+    'kick',
+    'ban',
+    'clear',
+    'tempban',
+    'unban',
+    'lock',
+    'unlock',
+    'slowmode',
+    'case_delete',
+    'unwarn'
+  ];
+
+  return actions.map((action) => {
+    const label = action ? (AUDIT_ACTION_LABELS[action] || action) : 'Toutes les sanctions';
+    return `<option value="${escapeHtml(action)}"${action === selectedAction ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function permissionDiagnosticsPanel(state) {
+  const diagnostics = state.diagnostics;
+
+  if (!diagnostics?.checks?.length) {
+    return '';
+  }
+
+  const headline = diagnostics.fixes?.length
+    ? `${diagnostics.fixes.length} point(s) à corriger`
+    : 'Tout est prêt';
+
+  return `
+    <article class="inline-form diagnostics-panel">
+      <div class="panel-mini-heading">
+        <div>
+          <p class="eyebrow">Diagnostic permissions</p>
+          <h3>Ce que Noctigarde peut faire</h3>
+          <p class="muted">Si une action est refusée, corrige d’abord la ligne indiquée ici : permission manquante, salon inaccessible ou rôle Noctigarde placé trop bas.</p>
+        </div>
+        ${statusBadge(headline, diagnostics.fixes.length === 0)}
+      </div>
+      <div class="diagnostic-grid">
+        ${diagnostics.checks.map((check) => `
+          <div class="diagnostic-check ${check.ok ? 'is-ready' : 'is-warning'}">
+            <span>${escapeHtml(diagnosticLabelText(check))}</span>
+            <strong>${escapeHtml(check.value)}</strong>
+            ${check.ok ? '' : `<small>${escapeHtml(diagnosticFixText(check))}</small>`}
+          </div>
+        `).join('')}
+      </div>
+    </article>
+  `;
+}
+
+function moderationCaseTargetLabel(item) {
+  if (item.targetUserId) {
+    return item.targetUserId;
+  }
+
+  if (item.action === 'clear' || item.action === 'purge') {
+    return 'Salon';
+  }
+
+  if (['lock', 'unlock', 'slowmode'].includes(item.action)) {
+    return 'Salon';
+  }
+
+  return 'Aucune cible';
+}
+
+function moderationCaseDetails(item) {
+  if (String(expandedModerationCaseId) !== String(item.id)) {
+    return '';
+  }
+
+  return `
+    <tr class="case-detail-row">
+      <td colspan="7">
+        <div class="case-detail-card">
+          <div>
+            <span>Cas</span>
+            <strong>#${escapeHtml(item.id)}</strong>
+          </div>
+          <div>
+            <span>Action</span>
+            <strong>${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</strong>
+          </div>
+          <div>
+            <span>Cible</span>
+            <code>${escapeHtml(moderationCaseTargetLabel(item))}</code>
+          </div>
+          <div>
+            <span>Staff</span>
+            <code>${escapeHtml(item.moderatorUserId || 'Inconnu')}</code>
+          </div>
+          <div>
+            <span>Durée</span>
+            <strong>${escapeHtml(item.durationLabel || 'Sans durée')}</strong>
+          </div>
+          <div class="case-detail-wide">
+            <span>Raison</span>
+            <p>${escapeHtml(item.reason || 'Aucune raison indiquée')}</p>
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function moderationCaseFilters(state) {
+  const limit = state.advanced ? 25 : 10;
+
+  return `
+    <form class="audit-filters moderation-filters" data-moderation-filter>
+      <div class="audit-field">
+        ${labelHelp('Utilisateur', 'Filtre les sanctions liées à un ID Discord précis.')}
+        <input name="userId" placeholder="ID Discord" value="${escapeHtml(moderationFilters.userId || '')}">
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Type', 'Affiche seulement un type de sanction : avertissement, timeout, ban, purge, etc.')}
+        <select name="action">${moderationFilterActionOptions(moderationFilters.action || '')}</select>
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Cas', 'Ouvre rapidement un dossier précis avec son numéro.')}
+        <input name="caseId" placeholder="Exemple : 12" value="${escapeHtml(moderationFilters.caseId || '')}">
+      </div>
+      <div class="audit-field">
+        ${labelHelp('Limite', 'Nombre maximum de dossiers affichés dans cette vue.')}
+        <input name="limit" type="number" min="1" max="${state.advanced ? 100 : 10}" value="${escapeHtml(moderationFilters.limit || limit)}">
+      </div>
+      <div class="audit-actions">
+        <button class="button" type="submit">Filtrer les sanctions</button>
+        <button class="button button-ghost" type="button" data-moderation-reset>Réinitialiser</button>
+      </div>
+    </form>
+  `;
+}
+
+function moderationCaseList(state) {
+  const cases = state.moderationCases?.items || [];
+  const limit = state.moderationCases?.limit || 10;
+
+  if (cases.length === 0) {
+    return '<p class="muted">Aucun dossier de modération enregistré pour le moment.</p>';
+  }
+
+  return `
+    <div class="table-shell moderation-case-shell">
+      <table class="dashboard-table moderation-case-table">
+        <thead>
+          <tr>
+            <th>Cas</th>
+            <th>Action</th>
+            <th>Cible</th>
+            <th>Staff</th>
+            <th>Raison</th>
+            <th>Date</th>
+            <th>Détails</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cases.map((item) => `
+            <tr>
+              <td><strong>#${escapeHtml(item.id)}</strong></td>
+              <td>
+                <strong>${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</strong>
+                ${item.durationLabel ? `<small>${escapeHtml(item.durationLabel)}</small>` : ''}
+              </td>
+              <td><code>${escapeHtml(moderationCaseTargetLabel(item))}</code></td>
+              <td><code>${escapeHtml(item.moderatorUserId || 'Inconnu')}</code></td>
+              <td>${escapeHtml(item.reason || 'Aucune raison indiquée')}</td>
+              <td>${escapeHtml(formatAuditDate(item.createdAt))}</td>
+              <td><button class="button button-small button-ghost" type="button" data-case-detail="${escapeHtml(item.id)}">Voir</button></td>
+            </tr>
+            ${moderationCaseDetails(item)}
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted case-limit-note">Affichage limité aux ${escapeHtml(limit)} derniers dossiers sur ce serveur.</p>
+  `;
+}
+
+const AUTOMOD_ACTION_LABELS = {
+  log: 'Log seulement',
+  delete: 'Supprimer',
+  warn: 'Avertir',
+  timeout: 'Timeout',
+  kick: 'Expulser',
+  ban: 'Bannir'
+};
+
+const AUTOMOD_RULE_LABELS = {
+  forbidden_words: 'Mots interdits',
+  discord_invite: 'Invitations Discord',
+  spam: 'Spam',
+  premium_caps: 'Majuscules',
+  premium_mentions: 'Mentions',
+  premium_raid: 'Anti-raid'
+};
+
+function automodSettings(state) {
+  return {
+    enabled: false,
+    forbiddenWordsEnabled: true,
+    forbiddenWordsAction: 'delete',
+    inviteFilterEnabled: false,
+    inviteAction: 'delete',
+    spamFilterEnabled: false,
+    spamAction: 'timeout',
+    spamMaxMessages: 5,
+    spamWindowSeconds: 8,
+    spamTimeoutSeconds: 600,
+    premiumCapsEnabled: false,
+    premiumCapsAction: 'delete',
+    premiumMentionsEnabled: false,
+    premiumMentionsAction: 'timeout',
+    premiumMentionLimit: 6,
+    premiumProgressiveEnabled: false,
+    premiumProgressiveWindowMinutes: 60,
+    premiumProgressiveTimeoutThreshold: 3,
+    premiumProgressiveKickThreshold: 5,
+    premiumProgressiveBanThreshold: 7,
+    premiumRaidEnabled: false,
+    premiumRaidJoinCount: 6,
+    premiumRaidWindowSeconds: 30,
+    premiumIgnoredRoleIds: [],
+    premiumIgnoredChannelIds: [],
+    freeWordLimit: 25,
+    premiumWordLimit: 200,
+    ...(state.automod?.settings || {})
+  };
+}
+
+function automodActionOptions(selectedAction = 'delete', premium = false) {
+  const actions = premium
+    ? ['log', 'delete', 'warn', 'timeout', 'kick', 'ban']
+    : ['log', 'delete', 'warn', 'timeout'];
+
+  return actions.map((action) => `
+    <option value="${escapeHtml(action)}"${action === selectedAction ? ' selected' : ''}>${escapeHtml(AUTOMOD_ACTION_LABELS[action] || action)}</option>
+  `).join('');
+}
+
+function automodCheckbox(name, checked) {
+  return `
+    <input type="hidden" name="${escapeHtml(name)}" value="false">
+    <input type="checkbox" name="${escapeHtml(name)}" value="true" ${checked ? 'checked' : ''}>
+  `;
+}
+
+function automodToggle(name, checked, label, help) {
+  return `
+    <div class="automod-toggle">
+      ${labelHelp(label, help)}
+      ${automodCheckbox(name, checked)}
+    </div>
+  `;
+}
+
+function automodWordList(state) {
+  const words = state.automod?.words || [];
+
+  if (!words.length) {
+    return '<p class="muted">Aucun mot interdit configuré.</p>';
+  }
+
+  return `
+    <div class="automod-word-list">
+      ${words.map((item) => `
+        <form class="automod-word-chip" data-action-form="remove-automod-word">
+          <input type="hidden" name="word" value="${escapeHtml(item.word)}">
+          <code>${escapeHtml(item.word)}</code>
+          <button class="button button-small button-ghost" type="submit">Retirer</button>
+        </form>
+      `).join('')}
+    </div>
+  `;
+}
+
+function automodEventList(state) {
+  const events = state.automod?.events || [];
+
+  if (!events.length) {
+    return '<p class="muted">Aucun signal de sécurité pour le moment.</p>';
+  }
+
+  return `
+    <div class="automod-event-list">
+      ${events.map((item) => {
+        const channel = resolveChannel(state, item.channelId);
+        return `
+          <article>
+            <div>
+              <strong>${escapeHtml(AUTOMOD_RULE_LABELS[item.rule] || item.rule)}</strong>
+              <span>${escapeHtml(AUTOMOD_ACTION_LABELS[item.action] || item.action)} - ${escapeHtml(formatAuditDate(item.createdAt))}</span>
+            </div>
+            <code>${escapeHtml(item.userId)}</code>
+            <small>${channel ? `#${escapeHtml(channel.name)}` : escapeHtml(item.channelId || 'sans salon')}</small>
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function automodSecurityOverview(state, settings, words) {
+  const events = state.automod?.events || [];
+  const activeSignals = [
+    settings.forbiddenWordsEnabled,
+    settings.inviteFilterEnabled,
+    settings.spamFilterEnabled
+  ].filter(Boolean).length;
+  const latestEvent = events[0]?.createdAt ? formatAuditDate(events[0].createdAt) : 'Aucun signal';
+
+  return `
+    <div class="automod-security-grid">
+      <article class="automod-security-card">
+        <span>Garde</span>
+        <strong>${settings.enabled ? 'En service' : 'En pause'}</strong>
+        <small>${settings.enabled ? 'Les règles actives surveillent les salons autorisés.' : 'Aucune règle automatique ne se déclenche.'}</small>
+      </article>
+      <article class="automod-security-card">
+        <span>Signaux actifs</span>
+        <strong>${activeSignals}/3</strong>
+        <small>Mots surveillés, invitations et rafales de messages.</small>
+      </article>
+      <article class="automod-security-card">
+        <span>Lexique</span>
+        <strong>${escapeHtml(words.length)}</strong>
+        <small>mot(s) ou expression(s) consignés.</small>
+      </article>
+      <article class="automod-security-card">
+        <span>Dernière alerte</span>
+        <strong>${escapeHtml(latestEvent)}</strong>
+        <small>${escapeHtml(events.length)} signalement(s) dans le registre récent.</small>
+      </article>
+      <article class="automod-security-card">
+        <span>Accès</span>
+        <strong>Noctigarde</strong>
+        <small>Garde essentielle disponible.</small>
+      </article>
+    </div>
+  `;
+}
+
+function automodFreePanel(state) {
+  const settings = automodSettings(state);
+  const wordLimit = state.advanced ? settings.premiumWordLimit : settings.freeWordLimit;
+  const words = (state.automod?.words || []).slice(0, wordLimit);
+  const freeState = {
+    ...state,
+    automod: {
+      ...(state.automod || {}),
+      words
+    }
+  };
+
+  return `
+    <article class="inline-form automod-card automod-card-wide">
+      <div class="panel-mini-heading">
+        <div>
+          <p class="eyebrow">Centre de sécurité</p>
+          <h3>Garde automatique</h3>
+          <p class="muted">Lexique surveillé, invitations et rythme de messages.</p>
+        </div>
+        ${statusBadge(settings.enabled ? 'En service' : 'Pause', settings.enabled)}
+      </div>
+      ${automodSecurityOverview(state, settings, words)}
+      <form class="automod-settings-form" data-action-form="set-automod-settings">
+        <div class="automod-toggle-grid">
+          ${automodToggle('enabled', settings.enabled, 'Mettre la garde en service', 'Allume ou met en pause toutes les règles automatiques du serveur.')}
+          ${automodToggle('forbiddenWordsEnabled', settings.forbiddenWordsEnabled, 'Lexique interdit', 'Détecte les mots ajoutés dans le registre du serveur.')}
+          ${automodToggle('inviteFilterEnabled', settings.inviteFilterEnabled, 'Invitations externes', 'Repère les liens discord.gg et les liens d’invitation.')}
+          ${automodToggle('spamFilterEnabled', settings.spamFilterEnabled, 'Rafales de messages', 'Détecte les messages envoyés trop vite par la même personne.')}
+        </div>
+        <div class="automod-control-grid">
+          <div>
+            ${labelHelp('Réponse lexique', 'Mesure appliquée quand un mot surveillé est détecté.')}
+            <select name="forbiddenWordsAction">${automodActionOptions(settings.forbiddenWordsAction, true)}</select>
+          </div>
+          <div>
+            ${labelHelp('Réponse invitations', 'Mesure appliquée quand une invitation est détectée.')}
+            <select name="inviteAction">${automodActionOptions(settings.inviteAction, true)}</select>
+          </div>
+          <div>
+            ${labelHelp('Réponse rafale', 'Mesure appliquée quand le seuil de rafale est dépassé.')}
+            <select name="spamAction">${automodActionOptions(settings.spamAction, true)}</select>
+          </div>
+          <div>
+            ${labelHelp('Seuil de rafale', 'Nombre de messages tolérés dans la fenêtre de surveillance.')}
+            <input name="spamMaxMessages" type="number" min="2" max="12" value="${escapeHtml(settings.spamMaxMessages)}">
+          </div>
+          <div>
+            ${labelHelp('Fenêtre de surveillance', 'Durée en secondes utilisée pour compter les messages rapides.')}
+            <input name="spamWindowSeconds" type="number" min="3" max="60" value="${escapeHtml(settings.spamWindowSeconds)}">
+          </div>
+          <div>
+            ${labelHelp('Durée de silence', 'Durée du silence automatique en secondes.')}
+            <input name="spamTimeoutSeconds" type="number" min="30" max="2419200" value="${escapeHtml(Number(settings.spamTimeoutSeconds) || 600)}">
+          </div>
+        </div>
+        <button class="button" type="submit">Enregistrer la garde</button>
+      </form>
+    </article>
+    <article class="inline-form automod-card">
+      <div class="panel-mini-heading">
+        <div>
+          <h3>Lexique surveillé</h3>
+          <p class="muted">${escapeHtml(words.length)}/${escapeHtml(wordLimit)} mot(s) configurés.</p>
+        </div>
+      </div>
+      <form class="automod-add-word" data-action-form="add-automod-word">
+        <input name="word" maxlength="80" placeholder="Mot ou expression à surveiller" required>
+        <button class="button" type="submit">Consigner</button>
+      </form>
+      ${automodWordList(freeState)}
+    </article>
+    <article class="inline-form automod-card">
+      <h3>Registre des alertes</h3>
+      ${automodEventList(state)}
+    </article>
+  `;
+}
+
+function automodPremiumPanel(state, premiumTag) {
+  const settings = automodSettings(state);
+
+  return `
+    <article class="inline-form automod-card automod-card-wide premium-roadmap">
+      <div class="panel-mini-heading">
+        <div>
+          <p class="eyebrow">Garde renforcée</p>
+          <h3>Veille automatique</h3>
+          <p class="muted">Majuscules abusives, mentions massives, récidives et arrivée groupée.</p>
+        </div>
+      </div>
+      <form class="automod-settings-form" data-action-form="set-automod-settings">
+        <div class="automod-toggle-grid">
+          ${automodToggle('premiumCapsEnabled', settings.premiumCapsEnabled, 'Surveillance majuscules', 'Repère les messages presque entièrement en majuscules.')}
+          ${automodToggle('premiumMentionsEnabled', settings.premiumMentionsEnabled, 'Mentions massives', 'Repère les messages avec trop de mentions.')}
+          ${automodToggle('premiumProgressiveEnabled', settings.premiumProgressiveEnabled, 'Escalade récidive', 'Renforce la mesure quand la même personne récidive dans la période choisie.')}
+          ${automodToggle('premiumRaidEnabled', settings.premiumRaidEnabled, 'Veille anti-raid', 'Signale une arrivée massive de membres dans un court délai.')}
+        </div>
+        <div class="automod-control-grid">
+          <div>
+            ${labelHelp('Réponse majuscules', 'Mesure appliquée aux messages abusant des majuscules.', ` ${premiumTag}`)}
+            <select name="premiumCapsAction">${automodActionOptions(settings.premiumCapsAction, true)}</select>
+          </div>
+          <div>
+            ${labelHelp('Réponse mentions', 'Mesure appliquée quand le seuil de mentions est dépassé.', ` ${premiumTag}`)}
+            <select name="premiumMentionsAction">${automodActionOptions(settings.premiumMentionsAction, true)}</select>
+          </div>
+          <div>
+            ${labelHelp('Limite de mentions', 'Nombre de mentions à partir duquel la règle se déclenche.', ` ${premiumTag}`)}
+            <input name="premiumMentionLimit" type="number" min="3" max="30" value="${escapeHtml(settings.premiumMentionLimit)}">
+          </div>
+          <div>
+            ${labelHelp('Fenêtre récidive', 'Durée en minutes utilisée pour compter les déclenchements répétés.', ` ${premiumTag}`)}
+            <input name="premiumProgressiveWindowMinutes" type="number" min="5" max="10080" value="${escapeHtml(settings.premiumProgressiveWindowMinutes)}">
+          </div>
+          <div>
+            ${labelHelp('Palier silence', 'Nombre de signaux avant silence automatique.', ` ${premiumTag}`)}
+            <input name="premiumProgressiveTimeoutThreshold" type="number" min="2" max="30" value="${escapeHtml(settings.premiumProgressiveTimeoutThreshold)}">
+          </div>
+          <div>
+            ${labelHelp('Palier expulsion', 'Nombre de signaux avant expulsion automatique.', ` ${premiumTag}`)}
+            <input name="premiumProgressiveKickThreshold" type="number" min="3" max="40" value="${escapeHtml(settings.premiumProgressiveKickThreshold)}">
+          </div>
+          <div>
+            ${labelHelp('Palier bannissement', 'Nombre de signaux avant bannissement automatique.', ` ${premiumTag}`)}
+            <input name="premiumProgressiveBanThreshold" type="number" min="4" max="50" value="${escapeHtml(settings.premiumProgressiveBanThreshold)}">
+          </div>
+          <div>
+            ${labelHelp('Arrivées groupées', 'Nombre d’arrivées à partir duquel Noctigarde alerte l’équipe.', ` ${premiumTag}`)}
+            <input name="premiumRaidJoinCount" type="number" min="3" max="30" value="${escapeHtml(settings.premiumRaidJoinCount)}">
+          </div>
+          <div>
+            ${labelHelp('Fenêtre d’arrivée', 'Durée en secondes utilisée pour détecter une vague d’arrivées.', ` ${premiumTag}`)}
+            <input name="premiumRaidWindowSeconds" type="number" min="10" max="300" value="${escapeHtml(settings.premiumRaidWindowSeconds)}">
+          </div>
+          <div>
+            ${labelHelp('Grades ignorés', 'IDs de grades ignorés par la garde automatique, séparés par des espaces.', ` ${premiumTag}`)}
+            <input name="premiumIgnoredRoleIds" value="${escapeHtml((settings.premiumIgnoredRoleIds || []).join(' '))}" placeholder="ID rôle ID rôle">
+          </div>
+          <div>
+            ${labelHelp('Salons ignorés', 'IDs de salons ou catégories ignorés par la garde automatique, séparés par des espaces.', ` ${premiumTag}`)}
+            <input name="premiumIgnoredChannelIds" value="${escapeHtml((settings.premiumIgnoredChannelIds || []).join(' '))}" placeholder="ID salon ID catégorie">
+          </div>
+        </div>
+        <button class="button" type="submit" ${state.advanced ? '' : 'disabled'}>Enregistrer la veille</button>
+      </form>
+    </article>
+  `;
+}
+
+function messagePurgeArchiveHistory(state) {
+  const archives = Array.isArray(state.messagePurgeArchives) ? state.messagePurgeArchives : [];
+  const statusLabels = {
+    archived: 'Archive prête',
+    completed: 'Suppression terminée',
+    channel_recreated: 'Salon recréé',
+    completed_with_warnings: 'À vérifier',
+    delete_failed: 'Suppression interrompue',
+    recreation_failed: 'Recréation interrompue',
+    final_verification_failed: 'Contrôle final impossible',
+    snapshot_changed: 'Nouveau message détecté'
+  };
+
+  return `
+    <article class="inline-form purge-archive-history">
+      ${labelHelp('Archives des nettoyages', 'Chaque suppression est précédée d’une archive vérifiée contenant les messages, auteurs, dates, embeds et pièces jointes.')}
+      <p class="muted">Les archives restent privées et ne sont téléchargeables que par le personnel autorisé à gérer les messages.</p>
+      <div class="operation-list">
+        ${archives.length ? archives.map((archive) => `
+          <div class="operation-row">
+            <div>
+              <span>${escapeHtml(formatAuditDate(archive.createdAt))} · #${escapeHtml(archive.channelName)}</span>
+              <strong>${escapeHtml(archive.messageCount)} message(s) · ${escapeHtml(archive.deletedCount)} retiré(s)</strong>
+              ${archive.replacementChannelId ? `<small>Nouveau salon : #${escapeHtml(archive.replacementChannelName || archive.channelName)} · ID ${escapeHtml(archive.replacementChannelId)}</small>` : ''}
+              <small>Archive #${escapeHtml(archive.id)} · ${escapeHtml(formatStorageBytes(archive.archiveSize))} · ${escapeHtml(statusLabels[archive.status] || archive.status)}</small>
+            </div>
+            <a class="button button-small button-ghost" href="/api/guilds/${encodeURIComponent(state.guild.id)}/message-purge-archives/${encodeURIComponent(archive.id)}" download>Télécharger</a>
+          </div>
+        `).join('') : '<p class="muted">Aucun nettoyage archivé pour ce serveur.</p>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderFreeModerationPanel(state, channelOptions, autoRoleOptions) {
+  return `
+    <section class="dashboard-panel module-panel moderation-panel" id="moderation">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Sécurité Noctigarde</p>
+          <h2>Centre de sécurité</h2>
+          <p class="muted">Sanctions essentielles, garde automatique et registre récent du serveur.</p>
+        </div>
+        <span class="status-badge">Noctigarde</span>
+      </div>
+      ${permissionDiagnosticsPanel(state)}
+      <div class="form-grid module-form-grid">
+        <article class="inline-form moderation-note">
+          ${labelHelp('Grade automatique d’arrivée', 'Donne automatiquement un grade aux nouveaux membres. Noctigarde doit être placé au-dessus du grade choisi.')}
+          <p class="muted">Actuel : ${state.config.autoRoleId ? escapeHtml(resolveRole(state, state.config.autoRoleId)?.name || 'rôle supprimé sur Discord') : 'désactivé'}</p>
+          <form data-action-form="set-auto-role">
+            <select name="roleId">${autoRoleOptions}</select>
+            <button class="button" type="submit">Configurer le grade</button>
+          </form>
+          <form data-action-form="disable-auto-role">
+            <button class="button button-ghost" type="submit">Désactiver le grade</button>
+          </form>
+        </article>
+        ${automodFreePanel(state)}
+        <form data-action-form="warn">
+          ${labelHelp('Consigner un avertissement', 'Ajoute un avertissement au dossier disciplinaire d’un utilisateur.')}
+          <input name="userId" placeholder="ID utilisateur" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Avertir</button>
+        </form>
+        <form data-action-form="timeout">
+          ${labelHelp('Mise au silence', 'Rend temporairement muet un membre présent pendant la durée indiquée.')}
+          <input name="userId" placeholder="ID du membre présent" required>
+          <input name="duration" placeholder="10m, 2h, 7d" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Mettre au silence</button>
+        </form>
+        <form data-action-form="untimeout">
+          ${labelHelp('Lever le silence', 'Retire un silence actif et conserve une trace de l’action.')}
+          <input name="userId" placeholder="ID du membre présent" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Retirer</button>
+        </form>
+        <form data-action-form="kick">
+          ${labelHelp('Expulser', 'Retire un membre du serveur sans le bannir.')}
+          <input name="userId" placeholder="ID du membre présent" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Expulser</button>
+        </form>
+        <form data-action-form="ban">
+          ${labelHelp('Bannir par ID', 'Bannit un utilisateur avec son ID, même s’il n’est plus présent.')}
+          <input name="userId" placeholder="ID, même hors serveur" required>
+          <input name="reason" placeholder="Raison">
+          <input name="deleteDays" type="number" min="0" max="7" placeholder="Jours messages">
+          <button class="button" type="submit">Bannir</button>
+        </form>
+        <form data-action-form="purge" data-purge-form>
+          ${labelHelp('Archiver et nettoyer un salon', 'Noctigarde crée et vérifie une archive privée avant toute suppression. Le mode complet recrée ensuite le salon vide.')}
+          <select name="channelId">${channelOptions}</select>
+          <select name="mode">
+            <option value="count">Supprimer un nombre précis</option>
+            <option value="all">Vider entièrement le salon</option>
+          </select>
+          <div class="purge-mode-field" data-purge-count-field>
+            <span>Nombre de messages récents</span>
+            <input name="count" type="number" min="1" max="100" value="10" required>
+            <small>De 1 à 100 messages récents.</small>
+          </div>
+          <div class="purge-mode-field purge-mode-danger" data-purge-all-field hidden>
+            <span>Confirmation du vidage complet</span>
+            <input name="confirmation" maxlength="10" autocomplete="off" placeholder="Écrire VIDER">
+            <small>Le salon sera recréé vide, puis l’original sera supprimé. Son ID changera et les anciens liens, webhooks et fils seront rompus.</small>
+          </div>
+          <p class="muted">Si l’archive ne peut pas être créée et vérifiée, aucun message n’est supprimé.</p>
+          <button class="button button-danger" type="submit">Archiver puis nettoyer</button>
+        </form>
+        ${messagePurgeArchiveHistory(state)}
+        <article class="inline-form moderation-cases-note">
+          ${labelHelp('Registre disciplinaire', 'Affiche les dernières mesures enregistrées sur ce serveur.')}
+          ${moderationCaseFilters(state)}
+          ${moderationCaseList(state)}
+        </article>
+        ${moderationAppealsPanel(state)}
+      </div>
+    </section>
+  `;
+}
+
+function moderationAppealsPanel(state) {
+  const items = state.moderationAppeals || [];
+  return `
+    <article class="inline-form moderation-cases-note">
+      <div class="panel-mini-heading"><div><p class="eyebrow">Demandes de révision</p><h3>Contestations des sanctions</h3><p class="muted">Chaque réponse est conservée et redevient visible dans l’espace personnel du membre.</p></div></div>
+      ${items.length ? `<div class="operation-list">${items.map(item => `
+        <div class="operation-row"><div><span>#${escapeHtml(item.id)} · sanction #${escapeHtml(item.caseId)} · membre ${escapeHtml(item.userId)}</span><strong>${escapeHtml(item.statement)}</strong><small>${escapeHtml(formatAuditDate(item.createdAt))}${item.decision ? ` · ${escapeHtml(item.decision)}` : ''}</small></div>
+        ${item.status === 'pending' ? `<form data-action-form="decide-appeal" class="operation-form-grid"><input type="hidden" name="appealId" value="${escapeHtml(item.id)}"><select name="status"><option value="accepted">Accepter la révision</option><option value="rejected">Refuser la révision</option></select><textarea name="decision" minlength="10" maxlength="2000" placeholder="Décision expliquée au membre" required></textarea><button class="button button-small" type="submit">Rendre la décision</button></form>` : statusBadge(item.status === 'accepted' ? 'Acceptée' : 'Refusée', item.status === 'accepted')}
+        </div>`).join('')}</div>` : '<p class="muted">Aucune contestation reçue.</p>'}
+    </article>`;
+}
+
+function warningEscalationPanel(state, premiumTag) {
+  const settings = state.warningEscalation?.settings || {};
+  const events = state.warningEscalation?.events || [];
+  const actionLabels = { timeout: 'Mise au silence', kick: 'Expulsion', ban: 'Bannissement' };
+
+  return `
+    <article class="inline-form automod-card automod-card-wide warning-escalation-card">
+      <div class="panel-mini-heading">
+        <div><p class="eyebrow">Discipline automatique</p><h3>Paliers d’avertissements ${premiumTag}</h3><p class="muted">Compte seulement les avertissements encore actifs dans la période choisie. Les retraits sont pris en compte immédiatement.</p></div>
+      </div>
+      <form data-action-form="set-warning-escalation" class="automod-settings-form">
+        <input type="hidden" name="enabled" value="false">
+        <label class="automod-toggle"><input type="checkbox" name="enabled" value="true" ${settings.enabled ? 'checked' : ''}><span><strong>Activer les sanctions par paliers</strong><small>Noctigarde vérifie le total après chaque nouvel avertissement.</small></span></label>
+        <div class="automod-control-grid">
+          <div>${labelHelp('Expiration des avertissements', 'Nombre de jours pendant lesquels un avertissement compte dans les paliers.')}<input name="windowDays" type="number" min="1" max="3650" value="${escapeHtml(settings.windowDays || 30)}"></div>
+          <div>${labelHelp('Palier mise au silence', 'Premier nombre d’avertissements déclenchant une mesure.')}<input name="timeoutThreshold" type="number" min="1" max="50" value="${escapeHtml(settings.timeoutThreshold || 3)}"></div>
+          <div>${labelHelp('Durée du silence', 'Durée en secondes, de 60 secondes à 28 jours.')}<input name="timeoutSeconds" type="number" min="60" max="2419200" value="${escapeHtml(settings.timeoutSeconds || 3600)}"></div>
+          <div>${labelHelp('Palier expulsion', 'Utilise 0 pour désactiver ce palier.')}<input name="kickThreshold" type="number" min="0" max="50" value="${escapeHtml(settings.kickThreshold || 5)}"></div>
+          <div>${labelHelp('Palier bannissement', 'Utilise 0 pour désactiver ce palier.')}<input name="banThreshold" type="number" min="0" max="50" value="${escapeHtml(settings.banThreshold || 7)}"></div>
+          <div>${labelHelp('Grades exemptés', 'IDs des rôles qui ne subiront jamais une sanction automatique.')}<input name="ignoredRoleIds" value="${escapeHtml((settings.ignoredRoleIds || []).join(' '))}" placeholder="ID rôle ID rôle"></div>
+        </div>
+        <button class="button" type="submit">Enregistrer les paliers</button>
+      </form>
+      <div class="operation-list">
+        ${events.length ? events.map(item => `
+          <div class="operation-row"><div><span>${escapeHtml(formatAuditDate(item.createdAt))} · ${escapeHtml(item.status)}</span><strong>${escapeHtml(actionLabels[item.action] || item.action)} au ${escapeHtml(item.warningCount)}e avertissement</strong><small>ID ${escapeHtml(item.userId)}${item.errorMessage ? ` · ${escapeHtml(item.errorMessage)}` : ''}</small></div></div>
+        `).join('') : '<p class="muted">Aucune sanction par palier enregistrée.</p>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderPremiumModerationPanel(state, channelOptions, premiumBadge, premiumTag) {
+  const pendingCritical = (state.criticalActions || []).filter(item => item.status === 'pending');
+  return `
+    <section class="dashboard-panel module-panel" id="moderation-tools">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Outils de sécurité</p>
+          <h2>Veille renforcée</h2>
+          <p class="muted">Sanctions complètes, protection automatique et actions de crise.</p>
+        </div>
+        ${premiumBadge}
+      </div>
+      ${permissionDiagnosticsPanel(state)}
+      <div class="form-grid module-form-grid">
+        <form data-action-form="tempban">
+          ${labelHelp('Bannissement temporaire', 'Bannit un utilisateur pour une durée précise, puis Noctigarde lève automatiquement le bannissement.', ` ${premiumTag}`)}
+          <input name="userId" placeholder="ID utilisateur" required>
+          <input name="duration" placeholder="1h, 7d, 30d" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Bannir temporairement</button>
+        </form>
+        <form data-action-form="unban">
+          ${labelHelp('Lever un bannissement', 'Retire le bannissement d’un utilisateur avec son ID.', ` ${premiumTag}`)}
+          <input name="userId" placeholder="ID utilisateur" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Débannir</button>
+        </form>
+        <form data-action-form="lock">
+          ${labelHelp('Verrouiller un salon', 'Bloque l’envoi de messages dans un salon.', ` ${premiumTag}`)}
+          <select name="channelId">${channelOptions}</select>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Verrouiller</button>
+        </form>
+        <form data-action-form="unlock">
+          ${labelHelp('Rouvrir un salon', 'Rétablit l’envoi de messages dans un salon verrouillé.', ` ${premiumTag}`)}
+          <select name="channelId">${channelOptions}</select>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Rouvrir</button>
+        </form>
+        <form data-action-form="slowmode">
+          ${labelHelp('Ralentir un salon', 'Impose un délai entre deux messages.', ` ${premiumTag}`)}
+          <select name="channelId">${channelOptions}</select>
+          <input name="duration" placeholder="10s, 5m, 0">
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Ralentir</button>
+        </form>
+        <form data-action-form="edit-case">
+          ${labelHelp('Corriger un dossier', 'Corrige la raison d’un dossier disciplinaire.', ` ${premiumTag}`)}
+          <input name="caseId" placeholder="ID du cas" required>
+          <input name="reason" placeholder="Nouvelle raison" required>
+          <button class="button" type="submit">Modifier</button>
+        </form>
+        <form data-action-form="delete-case">
+          ${labelHelp('Retirer un dossier', 'Retire un dossier disciplinaire invalide.', ` ${premiumTag}`)}
+          <input name="caseId" placeholder="ID du cas" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Supprimer</button>
+        </form>
+        <form data-action-form="unwarn">
+          ${labelHelp('Retirer un avertissement', 'Annule un avertissement précis sans effacer l’historique.', ` ${premiumTag}`)}
+          <input name="caseId" placeholder="ID du cas avertissement" required>
+          <input name="reason" placeholder="Raison">
+          <button class="button" type="submit">Annuler</button>
+        </form>
+        ${automodPremiumPanel(state, premiumTag)}
+        ${warningEscalationPanel(state, premiumTag)}
+        <form data-action-form="reset-guild">
+          ${labelHelp('Remise à zéro générale', 'Prépare la remise à zéro de toutes les heures. Un autre responsable devra la valider.', ` ${premiumTag}`)}
+          <input name="confirmation" autocomplete="off" placeholder="REINITIALISER" required>
+          <button class="button" type="submit">Demander la remise à zéro</button>
+        </form>
+      </div>
+      ${pendingCritical.length ? `<div class="maintenance-file-list"><h3>Validations en attente</h3>${pendingCritical.map(item => `<div class="maintenance-file-row"><span><strong>#${escapeHtml(item.id)}</strong><small>${escapeHtml(item.summary)}</small></span>${String(item.requestedByUserId) !== String(currentUser?.id) ? `<span class="maintenance-file-actions"><button class="button button-small" type="button" data-guild-critical-action="approve-critical-action" data-request-id="${escapeHtml(item.id)}">Approuver</button><button class="button button-small button-ghost" type="button" data-guild-critical-action="reject-critical-action" data-request-id="${escapeHtml(item.id)}">Refuser</button></span>` : '<small>Validation par une autre personne requise</small>'}</div>`).join('')}</div>` : ''}
+    </section>
+  `;
+}
+
+function renderModerationPanel(state, channelOptions, autoRoleOptions, premiumBadge, premiumTag) {
+  return `${renderFreeModerationPanel(state, channelOptions, autoRoleOptions)}${renderPremiumModerationPanel(state, channelOptions, premiumBadge, '')}`;
+}
+
+function profileDossierList(dossiers) {
+  if (!dossiers.length) {
+    return '<p class="muted">Aucun ticket lié à cet ID.</p>';
+  }
+
+  return `
+    <ul class="compact-list">
+      ${dossiers.slice(0, 6).map((item) => `
+        <li>
+          <span>#${escapeHtml(item.id)} ${escapeHtml(dossierTypeLabel(item.type))}</span>
+          <small>${escapeHtml(dossierStatusLabel(item.status))} - ${escapeHtml(item.subject || 'Sans sujet')}</small>
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+function profilePayrollSummary(payroll) {
+  if (!payroll) {
+    return '<p class="muted">Le registre des salaires n’est pas disponible sur ce serveur.</p>';
+  }
+
+  const history = payroll.history || [];
+
+  if (!payroll.line && !history.length) {
+    return '<p class="muted">Aucune ligne de salaire actuelle ou archivée pour cette personne.</p>';
+  }
+
+  return `
+    ${payroll.line ? `<div class="profile-payroll-card">
+      <div>
+        <span>Semaine</span>
+        <strong>${escapeHtml(payroll.weekStart)} → ${escapeHtml(payroll.weekEnd)}</strong>
+      </div>
+      <div>
+        <span>Montant estimé</span>
+        <strong>${escapeHtml(payroll.line.amountLabel)}</strong>
+      </div>
+      <div>
+        <span>Statut</span>
+        <strong>${payroll.line.paid ? 'Versé' : 'À verser'}</strong>
+        ${payroll.line.paidAt ? `<small>${escapeHtml(formatSessionDate(payroll.line.paidAt))}</small>` : ''}
+      </div>
+    </div>` : '<p class="muted">Aucune ligne sur la semaine en cours.</p>'}
+    ${history.length ? `
+      <div class="profile-payroll-history">
+        <h5>Historique des salaires</h5>
+        <ul class="compact-list">
+          ${history.map((item) => `
+            <li>
+              <span>${escapeHtml(item.weekStart)} → ${escapeHtml(item.weekEnd)}</span>
+              <strong>${escapeHtml(item.amountLabel)} · ${item.paid ? 'Versé' : 'À verser'}</strong>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    ` : ''}
+  `;
+}
+
+function userProfilePanel(profile) {
+  if (!profile) {
+    return '<p class="muted">Entre un ID Discord pour voir les heures, sanctions, tickets, salaire et actions liées à cette personne.</p>';
+  }
+
+  const sessions = profile.service?.sessions || [];
+  const cases = profile.moderationCases?.items || [];
+  const dossiers = profile.dossiers?.items || [];
+  const actions = profile.actions || [];
+  const payrollLine = profile.payroll?.line || null;
+  const tag = profile.user.tag || profile.user.username || profile.user.id;
+  const avatarUrl = safeDiscordImageUrl(profile.user.avatar);
+
+  return `
+    <div class="user-profile-card">
+      <div class="user-profile-head">
+        ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : '<span class="user-avatar-placeholder"></span>'}
+        <div>
+          <h3>${escapeHtml(tag)}</h3>
+          <code>${escapeHtml(profile.user.id)}</code>
+          <small>${profile.user.inGuild ? 'Présent sur le serveur' : 'Hors du serveur ou introuvable'}</small>
+        </div>
+      </div>
+      <div class="user-profile-stats">
+        <article>
+          <span>Heures totales</span>
+          <strong>${escapeHtml(profile.service.totalTimeLabel)}</strong>
+        </article>
+        <article>
+          <span>Statut service</span>
+          <strong>${profile.service.active ? 'En service' : 'Hors service'}</strong>
+          ${profile.service.activeDurationLabel ? `<small>${escapeHtml(profile.service.activeDurationLabel)}</small>` : ''}
+        </article>
+        <article>
+          <span>Sessions</span>
+          <strong>${escapeHtml(profile.service.sessionCount)}</strong>
+        </article>
+        <article>
+          <span>Sanctions</span>
+          <strong>${escapeHtml(cases.length)}</strong>
+        </article>
+        <article>
+          <span>Tickets</span>
+          <strong>${escapeHtml(dossiers.length)}</strong>
+        </article>
+        <article>
+          <span>Salaire de la semaine</span>
+          <strong>${payrollLine ? escapeHtml(payrollLine.amountLabel) : 'Aucune'}</strong>
+          ${payrollLine ? `<small>${payrollLine.paid ? 'Versé' : 'À verser'}</small>` : ''}
+        </article>
+      </div>
+      <div class="user-profile-columns">
+        <div>
+          <h4>Dernières sessions</h4>
+          ${sessions.length
+            ? `<ul class="compact-list">${sessions.map((session) => `<li><span>${escapeHtml(formatSessionDate(session.date))}</span><strong>${escapeHtml(session.durationLabel)}</strong></li>`).join('')}</ul>`
+            : '<p class="muted">Aucune session terminée.</p>'}
+        </div>
+        <div>
+          <h4>Sanctions</h4>
+          ${cases.length
+            ? `<ul class="compact-list">${cases.map((item) => `<li><span>#${escapeHtml(item.id)} ${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</span><small>${escapeHtml(item.reason || 'Aucune raison')}</small></li>`).join('')}</ul>`
+            : '<p class="muted">Aucune sanction enregistrée.</p>'}
+        </div>
+        <div>
+          <h4>Tickets liés</h4>
+          ${profileDossierList(dossiers)}
+        </div>
+        <div>
+          <h4>Salaire de la semaine</h4>
+          ${profilePayrollSummary(profile.payroll)}
+        </div>
+        <div class="user-profile-wide">
+          <h4>Dernières actions liées</h4>
+          ${actions.length
+            ? `<ul class="compact-list">${actions.map((item) => `<li><span>${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</span><small>${escapeHtml(formatAuditDate(item.createdAt))} - ${escapeHtml(item.summary)}</small></li>`).join('')}</ul>`
+            : '<p class="muted">Aucune action récente liée à cet ID.</p>'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function auditLogList(state) {
+  const items = state.auditLogs?.items || [];
+
+  if (items.length === 0) {
+    return '<p class="muted">Aucune action trouvée avec ces filtres.</p>';
+  }
+
+  return `
+    <div class="table-shell audit-table-shell">
+      <table class="dashboard-table audit-table">
+        <thead>
+          <tr>
+            <th>Origine</th>
+            <th>Action</th>
+            <th>Auteur</th>
+            <th>Cible</th>
+            <th>Serveur</th>
+            <th>Date</th>
+            <th>Résultat</th>
+          </tr>
+        </thead>
+        <tbody>
+      ${items.map((item) => `
+          <tr class="audit-${escapeHtml(item.status)}">
+            <td>${statusBadge(auditSourceLabel(item.source), true, item.source === 'discord' ? 'is-discord' : 'is-site')}</td>
+            <td>
+              <strong>${escapeHtml(AUDIT_ACTION_LABELS[item.action] || item.action)}</strong>
+              <small>${escapeHtml(item.summary)}</small>
+            </td>
+            <td>${escapeHtml(auditActorLabel(item))}</td>
+            <td>
+              <span>${escapeHtml(auditTargetTypeLabel(item.targetType))}</span>
+              <small>${escapeHtml(auditTargetLabel(item, state))}</small>
+            </td>
+            <td>${escapeHtml(item.guildName || item.guildId || '-')}</td>
+            <td>${escapeHtml(formatAuditDate(item.createdAt))}</td>
+            <td>${statusBadge(auditStatusLabel(item.status), item.status !== 'failed')}</td>
+          </tr>
+      `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderFreeAuditPanel(state) {
+  const items = (state.auditLogs?.items || []).slice(0, 10);
+  const freeState = {
+    ...state,
+    auditLogs: {
+      ...(state.auditLogs || {}),
+      items
+    }
+  };
+
+  return `
+    <section class="dashboard-panel" id="audit">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Historique Noctigarde</p>
+          <h2>Dernières actions</h2>
+          <p class="muted">Les dix dernières actions enregistrées sur le serveur.</p>
+        </div>
+        <span class="status-badge">Noctigarde</span>
+      </div>
+      <div class="audit-scope-note">
+        <span>Journal récent du serveur sélectionné</span>
+        <small>${escapeHtml(items.length)} entrée(s) affichée(s)</small>
+      </div>
+      ${auditLogList(freeState)}
+    </section>
+  `;
+}
+
+function scheduledAnnouncementList(state) {
+  const items = state.scheduledAnnouncements || [];
+  if (!items.length) return '<p class="muted">Aucun brouillon ni envoi programmé.</p>';
+
+  const statusLabels = {
+    pending_approval: 'Validation attendue',
+    scheduled: 'Programmé',
+    draft: 'Brouillon',
+    sent: 'Envoyé',
+    failed: 'Échec',
+    cancelled: 'Annulé'
+  };
+
+  return `
+    <div class="operation-list">
+      ${items.map(item => `
+        <article class="operation-row">
+          <div>
+            <span>${escapeHtml(statusLabels[item.status] || item.status)}</span>
+            <strong>${escapeHtml(item.title)}</strong>
+            <small>${item.nextRunAt ? escapeHtml(formatAuditDate(item.nextRunAt)) : 'Aucune date'} · ${escapeHtml(item.recurrence || 'none')}</small>
+            ${item.status === 'pending_approval' ? `<small>Créée par ${escapeHtml(item.createdByUserId)} · un autre responsable doit la valider</small>` : ''}
+            ${item.approvedByUserId ? `<small>Validée par ${escapeHtml(item.approvedByUserId)} le ${escapeHtml(formatAuditDate(item.approvedAt))}</small>` : ''}
+            ${item.lastError ? `<small class="operation-error">${escapeHtml(item.lastError)}</small>` : ''}
+          </div>
+          <div class="operation-row-actions">
+            ${item.status === 'pending_approval' ? `<button class="button button-small" type="button" data-operation-action="approve-scheduled-announcement" data-announcement-id="${escapeHtml(item.id)}">Valider</button>` : ''}
+            ${['scheduled', 'pending_approval', 'draft', 'failed'].includes(item.status) ? `<button class="button button-small button-ghost" type="button" data-operation-action="cancel-scheduled-announcement" data-announcement-id="${escapeHtml(item.id)}">Annuler</button>` : ''}
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function reportScheduleList(state) {
+  const labels = { service: 'Services', payroll: 'Salaires', dossiers: 'Dossiers', moderation: 'Modération' };
+  const items = state.reportSchedules || [];
+  if (!items.length) return '<p class="muted">Aucun rapport automatique configuré.</p>';
+
+  return `
+    <div class="operation-list">
+      ${items.map(item => `
+        <article class="operation-row">
+          <div>
+            <span>${escapeHtml(item.frequency === 'weekly' ? 'Chaque semaine' : 'Chaque mois')}</span>
+            <strong>${escapeHtml(labels[item.reportKind] || item.reportKind)} · ${escapeHtml(item.format.toUpperCase())}</strong>
+            <small>Prochain envoi : ${escapeHtml(formatAuditDate(item.nextRunAt))}</small>
+            ${item.lastError ? `<small class="operation-error">${escapeHtml(item.lastError)}</small>` : ''}
+          </div>
+          <button class="button button-small button-ghost" type="button" data-operation-action="remove-report-schedule" data-schedule-id="${escapeHtml(item.id)}">Retirer</button>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function simulationHistory(state) {
+  const items = state.simulations || [];
+  if (!items.length) return '<p class="muted simulation-empty">Aucun résultat enregistré pour le moment.</p>';
+
+  const labels = {
+    automod: 'Auto-modération',
+    dossier: 'Dossier',
+    payroll: 'Salaires',
+    announcement: 'Annonce'
+  };
+  const actionLabels = {
+    none: 'aucune action',
+    delete: 'suppression du message',
+    warn: 'avertissement',
+    timeout: 'exclusion temporaire',
+    kick: 'exclusion du serveur',
+    ban: 'bannissement'
+  };
+  const resultSummary = (item) => {
+    const result = item.result || {};
+    if (item.kind === 'automod') {
+      return result.matched
+        ? `${result.detail || 'Règle détectée'} · Réponse prévue : ${actionLabels[result.action] || result.action || 'action configurée'}`
+        : (result.detail || 'Ce message serait autorisé.');
+    }
+    if (item.kind === 'dossier') {
+      const destination = result.categoryName || 'catégorie générale';
+      const roles = result.roleNames?.length ? result.roleNames.join(', ') : 'équipe générale';
+      return `Destination : ${destination} · Responsables : ${roles}`;
+    }
+    if (item.kind === 'payroll') {
+      return result.found
+        ? `${result.totalTimeLabel} · ${result.amountLabel} · ${result.paid ? 'déjà versée' : 'à verser'}`
+        : (result.detail || 'Aucun salaire trouvé pour cette semaine.');
+    }
+    if (item.kind === 'announcement') {
+      return `Annonce valide · ${result.totalCharacters || 0} caractère(s)`;
+    }
+    return result.detail || 'Résultat enregistré.';
+  };
+
+  return `
+    <div class="simulation-history">
+      <div class="panel-mini-heading"><div><h4>Derniers résultats</h4><p class="muted">Les contrôles restent consultables sans aucune action sur Discord.</p></div></div>
+      <div class="operation-list">
+      ${items.map(item => `
+        <article class="operation-row">
+          <div>
+            <span>${escapeHtml(labels[item.kind] || 'Simulation')} · contrôle #${escapeHtml(item.id)}</span>
+            <strong>${escapeHtml(resultSummary(item))}</strong>
+            <small>${escapeHtml(formatAuditDate(item.createdAt))} · simulation uniquement</small>
+          </div>
+        </article>
+      `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function validationHistory(state) {
+  const runs = state.validationRuns || [];
+  if (!runs.length) return '<p class="muted">Aucun contrôle automatique enregistré.</p>';
+  const run = runs[0];
+  return `
+    <div class="validation-summary ${run.status === 'passed' ? 'is-ready' : 'is-warning'}">
+      <div class="panel-mini-heading">
+        <div class="validation-run-title"><span>Contrôle #${escapeHtml(run.id)}</span><strong>${run.status === 'passed' ? 'Validation réussie' : 'Points à corriger'}</strong></div>
+        <small>${escapeHtml(formatAuditDate(run.createdAt))}</small>
+      </div>
+      <div class="validation-checks">
+        ${(run.checks || []).map(check => `
+          <div class="${check.ok ? 'is-ready' : 'is-warning'}">
+            <span>${escapeHtml(check.label)}</span>
+            <strong>${check.ok ? 'Conforme' : 'À corriger'}</strong>
+            ${check.detail ? `<small>${escapeHtml(check.detail)}</small>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderOperationsPanel(state, channelOptions, premiumBadge, premiumTag) {
+  return `
+    <section class="dashboard-panel module-panel operations-panel">
+      <div class="panel-heading row-heading">
+        <div><p class="eyebrow">Pilotage Noctigarde</p><h2>Notifications, rapports et banc d’essai</h2><p class="muted">Retrouve les urgences, prépare les rapports et vérifie les automatisations depuis une seule vue.</p></div>
+        ${premiumBadge}
+      </div>
+      ${notificationCenter(state)}
+      <div class="operations-grid">
+        <article class="inline-form operation-card" data-operation-section="reports">
+          <div class="panel-mini-heading"><div><h3>Exports immédiats ${premiumTag}</h3><p class="muted">Le PDF est le format conseillé pour consulter, partager ou archiver un rapport.</p></div></div>
+          <div class="report-download-grid">
+            ${['service', 'payroll', 'dossiers', 'moderation'].map(kind => `
+              <div class="report-download-row">
+                <strong>${escapeHtml({ service: 'Services', payroll: 'Salaires', dossiers: 'Tickets', moderation: 'Modération' }[kind])}</strong>
+                <div class="report-download-actions">
+                  <button class="button button-small" type="button" data-report-download="${kind}" data-report-format="pdf">Télécharger le PDF</button>
+                  <button class="button button-small button-ghost report-sheets-button" type="button" data-report-sheets="${kind}" title="Copier le tableau pour Google Sheets">Google Sheets</button>
+                  <details class="report-format-menu">
+                    <summary class="button button-small button-ghost">Autres formats</summary>
+                    <button class="button button-small button-ghost" type="button" data-report-download="${kind}" data-report-format="xlsx" title="Télécharge un vrai classeur pour Microsoft Excel">Télécharger XLSX</button>
+                  </details>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </article>
+
+        <article class="inline-form operation-card" data-operation-section="reports">
+          <div class="panel-mini-heading"><div><h3>Rapports automatiques ${premiumTag}</h3><p class="muted">Envoi hebdomadaire ou mensuel dans un salon Discord.</p></div></div>
+          <form data-action-form="save-report-schedule" class="operation-form-grid">
+            <select name="reportKind"><option value="service">Services</option><option value="payroll">Salaires</option><option value="dossiers">Tickets</option><option value="moderation">Modération</option></select>
+            <select name="frequency"><option value="weekly">Chaque semaine</option><option value="monthly">Chaque mois</option></select>
+            <select name="format"><option value="pdf">PDF</option><option value="xlsx">Excel / Google Sheets</option></select>
+            <select name="channelId" required>${channelOptions}</select>
+            <button class="button" type="submit">Programmer</button>
+          </form>
+          ${reportScheduleList(state)}
+        </article>
+
+        <article class="inline-form operation-card operation-card-wide" data-operation-section="announcements">
+          <div class="panel-mini-heading"><div><h3>Annonces programmées ${premiumTag}</h3><p class="muted">Enregistre un brouillon, contrôle son aperçu et choisis une répétition.</p></div></div>
+          <div class="scheduled-announcement-editor">
+            <form data-action-form="save-scheduled-announcement" data-scheduled-editor class="operation-form-grid">
+              <input name="title" maxlength="256" placeholder="Titre de l’annonce" required>
+              <textarea name="description" maxlength="4000" placeholder="Message" required></textarea>
+              <input name="color" type="color" value="#2dd4bf" aria-label="Couleur">
+              <select name="channelId" required>${channelOptions}</select>
+              <input name="nextRunAt" type="datetime-local">
+              <select name="recurrence"><option value="none">Une fois</option><option value="weekly">Chaque semaine</option><option value="monthly">Chaque mois</option></select>
+              <select name="status"><option value="draft">Enregistrer en brouillon</option><option value="pending_approval">Soumettre à validation</option><option value="scheduled">Programmer directement</option></select>
+              <button class="button" type="submit">Enregistrer</button>
+            </form>
+            <aside class="announcement-preview" data-scheduled-preview><span>Aperçu Discord</span><strong>Titre de l’annonce</strong><p>Le message apparaîtra ici sans être envoyé.</p></aside>
+          </div>
+          ${scheduledAnnouncementList(state)}
+        </article>
+
+        <article class="inline-form operation-card operation-card-wide" data-operation-section="testing">
+          <div class="panel-mini-heading row-heading"><div><h3>Simulations sans action ${premiumTag}</h3><p class="muted">Vérifie les réglages du serveur sans sanctionner, publier, créer de dossier ni enregistrer de salaire.</p></div><span class="status-badge is-ready">Aucun effet sur Discord</span></div>
+          <div class="simulation-grid">
+            <form class="simulation-test" data-action-form="run-simulation">
+              <input type="hidden" name="kind" value="automod">
+              <div class="simulation-test-heading"><span>01</span><div><h4>Auto-modération</h4><p>Indique la règle et la réponse qui s’appliqueraient à un message.</p></div></div>
+              <label><span>Message à analyser</span><textarea name="content" placeholder="Écris ici un exemple de message Discord" required></textarea></label>
+              <button class="button" type="submit">Simuler l’auto-modération</button>
+            </form>
+            <form class="simulation-test" data-action-form="run-simulation">
+              <input type="hidden" name="kind" value="dossier">
+              <div class="simulation-test-heading"><span>02</span><div><h4>Dossier privé</h4><p>Affiche la catégorie, les responsables et le formulaire prévus.</p></div></div>
+              <label><span>Nature du dossier</span><select name="type"><option value="support">Support</option><option value="report">Signalement</option><option value="recruitment">Recrutement</option><option value="partnership">Partenariat</option><option value="other">Autre</option></select></label>
+              <button class="button" type="submit">Vérifier le dossier</button>
+            </form>
+            <form class="simulation-test" data-action-form="run-simulation">
+              <input type="hidden" name="kind" value="payroll">
+              <div class="simulation-test-heading"><span>03</span><div><h4>Salaire</h4><p>Calcule le salaire de la semaine sans le marquer comme versé.</p></div></div>
+              <label><span>Membre concerné</span><input name="userId" placeholder="ID Discord du membre" inputmode="numeric" required></label>
+              <button class="button" type="submit">Calculer l’aperçu</button>
+            </form>
+            <form class="simulation-test" data-action-form="run-simulation">
+              <input type="hidden" name="kind" value="announcement">
+              <div class="simulation-test-heading"><span>04</span><div><h4>Annonce Discord</h4><p>Contrôle le contenu et la couleur de l’embed sans le publier.</p></div></div>
+              <div class="simulation-fields">
+                <label><span>Titre de l’annonce</span><input name="title" placeholder="Titre" required></label>
+                <label class="simulation-color"><span>Couleur</span><input name="color" type="color" value="#2dd4bf" aria-label="Couleur de l’annonce"></label>
+                <label class="simulation-message"><span>Message de l’annonce</span><textarea name="description" placeholder="Message" required></textarea></label>
+              </div>
+              <button class="button" type="submit">Contrôler l’annonce</button>
+            </form>
+          </div>
+          ${simulationHistory(state)}
+        </article>
+
+        <article class="inline-form operation-card operation-card-wide" data-operation-section="testing">
+          <div class="panel-mini-heading"><div><h3>Validation Noctigarde ${premiumTag}</h3><p class="muted">Contrôle l’intégrité, les permissions, les rôles supprimés et l’isolation des accès.</p></div><button class="button" type="button" data-operation-action="run-validation">Lancer le contrôle</button></div>
+          ${validationHistory(state)}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function renderAuditPanel(state) {
+  const auditLogs = state.auditLogs || {};
+  const canViewGlobal = Boolean(auditLogs.canViewGlobal);
+  const currentScope = canViewGlobal ? auditScope : 'server';
+  const auditItems = auditLogs.items || [];
+  const successCount = auditItems.filter((item) => item.status !== 'failed').length;
+  const failedCount = auditItems.filter((item) => item.status === 'failed').length;
+  const siteCount = auditItems.filter((item) => item.source === 'site').length;
+  const discordCount = auditItems.filter((item) => item.source === 'discord').length;
+
+  return `
+    <section class="dashboard-panel" id="audit">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Historique</p>
+          <h2>Journal des actions</h2>
+          <p class="muted">Chaque ligne indique qui a agi, depuis où, sur quoi, et si l’action a réussi.</p>
+        </div>
+        <span class="status-badge">Historique complet</span>
+      </div>
+      ${globalLookupPanel(state)}
+      <div class="audit-overview">
+        <article><span>Actions affichées</span><strong>${escapeHtml(auditItems.length)}</strong></article>
+        <article><span>Réussites</span><strong>${escapeHtml(successCount)}</strong></article>
+        <article><span>Échecs</span><strong>${escapeHtml(failedCount)}</strong></article>
+        <article><span>Site / Discord</span><strong>${escapeHtml(siteCount)} / ${escapeHtml(discordCount)}</strong></article>
+      </div>
+      <form class="audit-filters" data-audit-filter>
+        <div class="audit-field">
+          ${labelHelp('Auteur', 'Filtre les actions faites par un utilisateur précis avec son ID Discord.')}
+          <input name="actorUserId" placeholder="ID Discord auteur" value="${escapeHtml(auditFilters.actorUserId || '')}">
+        </div>
+        <div class="audit-field">
+          ${labelHelp('Cible', 'Filtre les actions qui concernent un membre, un rôle, un salon, un message ou un cas précis.')}
+          <input name="targetId" placeholder="ID cible" value="${escapeHtml(auditFilters.targetId || '')}">
+        </div>
+        <div class="audit-field">
+          ${labelHelp('Action', 'Filtre par type d’action : reset, ban, embed, configuration, etc.')}
+          <select name="action">${auditActionOptions(auditFilters.action || '')}</select>
+        </div>
+        <div class="audit-field">
+          ${labelHelp('Statut', 'Affiche seulement les actions réussies, échouées, ou les deux.')}
+          <select name="status">
+            <option value=""${!auditFilters.status ? ' selected' : ''}>Tous les statuts</option>
+            <option value="success"${auditFilters.status === 'success' ? ' selected' : ''}>Succès</option>
+            <option value="failed"${auditFilters.status === 'failed' ? ' selected' : ''}>Échec</option>
+          </select>
+        </div>
+        <div class="audit-field">
+          ${labelHelp('Origine', 'Filtre les actions selon leur provenance : site ou Discord.')}
+          <select name="source">${auditSourceOptions(auditFilters.source || '')}</select>
+        </div>
+        <div class="audit-field">
+          ${labelHelp('Limite', 'Nombre maximum de lignes affichées dans cette vue.')}
+          <input name="limit" type="number" min="1" max="100" value="${escapeHtml(auditFilters.limit || auditLogs.limit || 25)}">
+        </div>
+        <div class="audit-actions">
+          <button class="button" type="submit">Filtrer l’historique</button>
+          <button class="button button-ghost" type="button" data-audit-reset>Réinitialiser</button>
+          ${canViewGlobal ? `
+            <button class="button button-ghost" type="button" data-audit-scope="${currentScope === 'global' ? 'server' : 'global'}">
+              ${currentScope === 'global' ? 'Vue serveur' : 'Vue globale créatrice'}
+            </button>
+          ` : ''}
+        </div>
+      </form>
+      <div class="audit-scope-note">
+        <span>${currentScope === 'global' ? 'Vue créatrice, tous les serveurs' : 'Journal limité au serveur sélectionné'}</span>
+        <small>${escapeHtml((state.auditLogs?.items || []).length)} entrée(s) affichée(s)</small>
+      </div>
+      ${auditLogList(state)}
+    </section>
+  `;
+}
+
+function siteStaffList(overview) {
+  const staff = overview?.staff || [];
+
+  if (!staff.length) {
+    return '<p class="muted">Aucun accès staff site actif.</p>';
+  }
+
+  return `
+    <ul class="compact-list founder-premium-list site-staff-list">
+      ${staff.map((item) => `
+        <li class="${item.discordRoleVerified ? '' : 'is-warning'}">
+          <span>
+            <strong>${escapeHtml(item.globalName || item.tag || item.username || item.id)}</strong>
+            <small><code>${escapeHtml(item.id)}</code>${item.createdAt ? ` - depuis ${escapeHtml(formatAuditDate(item.createdAt))}` : ''}</small>
+            <small>${item.discordRoleVerified ? 'Rôle Discord vérifié' : (item.inReferenceGuild ? 'Rôle staff Discord manquant' : 'Hors du Discord Noctigarde')}</small>
+          </span>
+          ${canManageFounderPanel() ? `
+            <button
+              class="button button-small button-ghost"
+              type="button"
+              data-creator-staff-click
+              data-action="remove"
+              data-user-id="${escapeHtml(item.id)}"
+            >Retirer</button>
+          ` : ''}
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+function formatStorageBytes(value) {
+  const bytes = Math.max(Number(value) || 0, 0);
+
+  if (bytes < 1024) return `${Math.round(bytes)} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} Go`;
+}
+
+function backupGenerationLabel(generations = []) {
+  const labels = { daily: 'Quotidienne', weekly: 'Hebdomadaire', monthly: 'Mensuelle', latest: 'Récente' };
+  return generations.map(value => labels[value] || value).join(' · ') || 'Copie supplémentaire';
+}
+
+function founderBackupHistory(storage, canManage) {
+  const backups = storage.backups || [];
+
+  if (!backups.length) {
+    return '<p class="muted">Aucune copie protégée disponible.</p>';
+  }
+
+  return `
+    <div class="maintenance-file-list">
+      ${backups.slice(0, 12).map((backup) => {
+        const verified = backup.verification?.status === 'ok';
+        return `
+          <div class="maintenance-file-row">
+            <span>
+              <strong>${escapeHtml(backupGenerationLabel(backup.generations))}</strong>
+              <small>${escapeHtml(formatAuditDate(backup.createdAt))} · ${escapeHtml(formatStorageBytes(backup.sizeBytes))}</small>
+              <small>${verified ? `Intégrité vérifiée ${escapeHtml(formatAuditDate(backup.verification.checkedAt))}` : 'Contrôle d’intégrité à effectuer'}</small>
+            </span>
+            ${canManage ? `
+              <span class="maintenance-file-actions">
+                <button class="button button-small button-ghost" type="button" data-maintenance-download data-kind="backup" data-file="${escapeHtml(backup.fileName)}">Télécharger</button>
+                <button class="button button-small button-ghost" type="button" data-maintenance-action="verify-backup" data-file="${escapeHtml(backup.fileName)}">Vérifier</button>
+              </span>
+            ` : statusBadge(verified ? 'Vérifiée' : 'En attente', verified)}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function founderColdArchiveHistory(storage, canManage) {
+  const archives = storage.coldArchives || [];
+
+  if (!archives.length) {
+    return '<p class="muted">Aucun journal n’a encore rejoint l’historique froid.</p>';
+  }
+
+  return `
+    <div class="maintenance-file-list">
+      ${archives.slice(0, 10).map((archive) => `
+        <div class="maintenance-file-row">
+          <span>
+            <strong>${archive.table === 'guild_automod_events' ? 'Registre de sûreté' : 'Journal de régie'}</strong>
+            <small>${escapeHtml(archive.rowCount)} entrée(s) · ${escapeHtml(formatStorageBytes(archive.sizeBytes))}</small>
+            <small>${archive.fromAt ? `${escapeHtml(formatAuditDate(archive.fromAt))} → ${escapeHtml(formatAuditDate(archive.toAt))}` : escapeHtml(formatAuditDate(archive.createdAt))}</small>
+          </span>
+          ${canManage ? `<button class="button button-small button-ghost" type="button" data-maintenance-download data-kind="archive" data-file="${escapeHtml(archive.fileName)}">Télécharger</button>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function founderStoragePanel(overview) {
+  const storage = overview?.storage;
+
+  if (!storage) return '';
+
+  if (storage.error) {
+    return `<section class="founder-storage-panel" aria-label="Stockage Noctigarde"><div class="founder-console-note"><strong>Stockage Noctigarde</strong><span>Le relevé est momentanément indisponible.</span></div></section>`;
+  }
+
+  const canManage = canManageFounderPanel();
+  const maintenance = storage.lastMaintenance || null;
+  const cleanup = maintenance?.cleanup || {};
+  const volume = storage.volume || {};
+  const media = storage.media || {};
+  const objectStorage = media.objectStorage || {};
+  const objectStorageLabel = objectStorage.configured
+    ? `${String(objectStorage.provider || 'S3').toUpperCase()} actif`
+    : (objectStorage.enabled ? 'Configuration incomplète' : 'Repli local');
+  const performance = storage.performance || {};
+  const databasePerformance = performance.database || {};
+  const runtime = performance.runtime || {};
+  const generations = storage.generations || {};
+  const alerts = storage.alerts || [];
+  const allCompressed = storage.count > 0 && storage.compressedCount === storage.count;
+  const usagePercent = Math.max(Math.min(Number(volume.usagePercent) || 0, 100), 0);
+
+  return `
+    <section class="founder-storage-panel" aria-label="Centre de maintenance Noctigarde">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Conservation</p>
+          <h3>Centre de maintenance</h3>
+          <p class="muted">Les dossiers, services, sanctions et archives des salaires restent dans le registre actif. Les anciens journaux techniques sont conservés sous forme compressée.</p>
+        </div>
+        ${statusBadge(alerts.length ? `${alerts.length} alerte(s)` : (allCompressed ? 'Sous contrôle' : 'Entretien en cours'), !alerts.length)}
+      </div>
+      ${alerts.length ? `<div class="maintenance-alerts">${alerts.map(alert => `<p><strong>Seuil ${escapeHtml(alert.level)} :</strong> ${escapeHtml(alert.message)}</p>`).join('')}</div>` : ''}
+      <div class="storage-capacity">
+        <span><strong>Volume utilisé</strong><small>${escapeHtml(formatStorageBytes(volume.usedBytes))} / ${escapeHtml(formatStorageBytes(volume.totalBytes))}</small></span>
+        <div class="storage-capacity-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeHtml(usagePercent)}"><span style="width:${escapeHtml(usagePercent)}%"></span></div>
+        <strong>${escapeHtml(usagePercent)} %</strong>
+      </div>
+      <div class="dashboard-metrics dashboard-kpis founder-storage-kpis">
+        <article class="dashboard-kpi"><span>Base active</span><strong>${escapeHtml(formatStorageBytes(storage.databaseBytes))}</strong><small>données opérationnelles</small></article>
+        <article class="dashboard-kpi"><span>Copies protégées</span><strong>${escapeHtml(formatStorageBytes(storage.backupBytes))}</strong><small>${escapeHtml(storage.count)} copie(s)</small></article>
+        <article class="dashboard-kpi"><span>Historique froid</span><strong>${escapeHtml(formatStorageBytes(storage.archiveBytes))}</strong><small>${escapeHtml(storage.coldArchives?.length || 0)} lot(s) consultable(s)</small></article>
+        <article class="dashboard-kpi"><span>Médias locaux</span><strong>${escapeHtml(formatStorageBytes(media.objectBytes))}</strong><small>${escapeHtml(media.localObjectCount || 0)} objet(s) · plafond ${escapeHtml(formatStorageBytes(media.maxBytes))}</small></article>
+        <article class="dashboard-kpi"><span>Stockage objet</span><strong>${escapeHtml(formatStorageBytes(media.externalObjectBytes))}</strong><small>${escapeHtml(media.externalObjectCount || 0)} objet(s) · ${escapeHtml(objectStorageLabel)}</small></article>
+      </div>
+      <div class="maintenance-grid">
+        <section class="maintenance-section">
+          <div class="panel-heading row-heading"><div><h4>Répartition de la base</h4><p class="muted">Occupation estimée par registre.</p></div></div>
+          <div class="storage-distribution">
+            ${(storage.distribution || []).map(item => `<div><span>${escapeHtml(item.name)}</span><strong>${escapeHtml(formatStorageBytes(item.sizeBytes))}</strong></div>`).join('') || '<p class="muted">Répartition indisponible.</p>'}
+          </div>
+        </section>
+        <section class="maintenance-section">
+          <div class="panel-heading row-heading"><div><h4>Surveillance</h4><p class="muted">Relevé depuis le dernier démarrage.</p></div></div>
+          <div class="storage-distribution">
+            <div><span>Requêtes SQLite</span><strong>${escapeHtml(databasePerformance.queryCount || 0)}</strong></div>
+            <div><span>Requêtes lentes</span><strong>${escapeHtml(databasePerformance.slowQueryCount || 0)}</strong></div>
+            <div><span>Erreurs SQLite</span><strong>${escapeHtml(databasePerformance.errorCount || 0)}</strong></div>
+            <div><span>Site, réponse p95</span><strong>${escapeHtml(runtime.dashboard?.p95Ms || 0)} / ${escapeHtml(runtime.dashboard?.budgetMs || 1000)} ms</strong></div>
+            <div><span>Budget du site</span><strong>${runtime.dashboard?.withinBudget === false ? 'Dépassé' : 'Respecté'}</strong></div>
+            <div><span>Erreurs du site</span><strong>${escapeHtml(runtime.dashboard?.errorCount || 0)}</strong></div>
+            <div><span>Discord, réponse p95</span><strong>${escapeHtml(runtime.discord?.p95Ms || 0)} / ${escapeHtml(runtime.discord?.budgetMs || 1500)} ms</strong></div>
+            <div><span>Budget Discord</span><strong>${runtime.discord?.withinBudget === false ? 'Dépassé' : 'Respecté'}</strong></div>
+            <div><span>Signal Discord</span><strong>${escapeHtml(runtime.discord?.gatewayPingMs || 0)} ms</strong></div>
+          </div>
+        </section>
+        <section class="maintenance-section">
+          <div class="panel-heading row-heading"><div><h4>Médias d’embeds</h4><p class="muted">Conversion WebP, détection des doublons et corbeille de 30 jours.</p></div></div>
+          <div class="storage-distribution">
+            <div><span>Destination</span><strong>${escapeHtml(objectStorageLabel)}</strong></div>
+            <div><span>Liens actifs</span><strong>${escapeHtml(media.activeCount || 0)}</strong></div>
+            <div><span>En corbeille</span><strong>${escapeHtml((media.trashCount || 0) + (media.orphanObjectCount || 0))}</strong></div>
+            <div><span>Hébergés uniquement par Discord</span><strong>${escapeHtml(media.remoteOnlyCount || 0)}</strong></div>
+            <div><span>Quota par serveur</span><strong>${escapeHtml(formatStorageBytes(media.quotaBytes))}</strong></div>
+          </div>
+        </section>
+        <section class="maintenance-section">
+          <div class="panel-heading row-heading"><div><h4>Plan de reprise</h4><p class="muted">${escapeHtml(generations.daily || 0)} quotidiennes · ${escapeHtml(generations.weekly || 0)} hebdomadaires · ${escapeHtml(generations.monthly || 0)} mensuelles</p></div></div>
+          <div class="storage-distribution">
+            <div><span>Dernière copie</span><strong>${storage.latestAt ? escapeHtml(formatAuditDate(storage.latestAt)) : 'Absente'}</strong></div>
+            <div><span>Dernier contrôle</span><strong>${storage.latestVerifiedAt ? escapeHtml(formatAuditDate(storage.latestVerifiedAt)) : 'À effectuer'}</strong></div>
+            <div><span>Copies compressées</span><strong>${escapeHtml(storage.compressedCount)} / ${escapeHtml(storage.count)}</strong></div>
+          </div>
+        </section>
+      </div>
+      ${canManage ? `
+        <div class="maintenance-toolbar">
+          <button class="button button-small" type="button" data-maintenance-action="run-maintenance">Lancer l’entretien</button>
+          <button class="button button-small button-ghost" type="button" data-maintenance-action="scan-media">Contrôler les médias</button>
+        </div>
+      ` : ''}
+      <details class="maintenance-history" open>
+        <summary>Copies protégées</summary>
+        ${founderBackupHistory(storage, canManage)}
+      </details>
+      <details class="maintenance-history">
+        <summary>Historique froid</summary>
+        ${founderColdArchiveHistory(storage, canManage)}
+      </details>
+      ${canManage && storage.backups?.length ? `
+        <details class="maintenance-history maintenance-restore">
+          <summary>Restauration fondatrice</summary>
+          <form data-maintenance-restore-form>
+            <label><span>Copie à restaurer</span><select name="fileName" required>${storage.backups.map(item => `<option value="${escapeHtml(item.fileName)}">${escapeHtml(formatAuditDate(item.createdAt))} · ${escapeHtml(backupGenerationLabel(item.generations))}</option>`).join('')}</select></label>
+            <label><span>Confirmation</span><input name="confirmation" autocomplete="off" placeholder="RESTAURER NOCTIGARDE" required></label>
+            <button class="button button-small" type="submit">Préparer la restauration</button>
+          </form>
+        </details>
+      ` : ''}
+      <div class="founder-console-note">
+        <strong>Dernier entretien</strong>
+        <span>${maintenance?.completedAt
+          ? `${escapeHtml(formatAuditDate(maintenance.completedAt))} · ${escapeHtml((cleanup.expiredSessions || 0))} session(s) expirée(s) · ${escapeHtml((cleanup.automodEvents || 0) + (cleanup.dashboardAuditLogs || 0))} entrée(s) archivée(s).`
+          : 'Le premier entretien sera lancé automatiquement au démarrage.'}</span>
+      </div>
+    </section>
+  `;
+}
+
+function founderSecurityPanel(overview) {
+  if (!overview?.access?.isFounder) return '';
+  const status = overview.founderMfa || {};
+  return `
+    <section class="founder-storage-panel" aria-label="Double sécurité fondatrice">
+      <div class="panel-heading row-heading">
+        <div><p class="eyebrow">Identité renforcée</p><h3>Double sécurité fondatrice</h3><p class="muted">Les restaurations, annonces globales et accès staff exigent cette vérification.</p></div>
+        ${statusBadge(status.enabled ? 'Active' : 'À configurer', Boolean(status.enabled))}
+      </div>
+      ${status.enabled ? `
+        <label><span>Code à usage unique ou code de secours</span><input data-founder-mfa-code type="password" inputmode="numeric" autocomplete="one-time-code" value="${escapeHtml(founderMfaCode)}" placeholder="Code de sécurité"></label>
+        <p class="muted">Une validation reste valable cinq minutes dans cette session. Codes de secours restants : ${escapeHtml(status.recoveryCodesRemaining || 0)}.</p>
+        <form data-founder-mfa-form><input type="hidden" name="action" value="disable"><input name="code" type="password" autocomplete="one-time-code" placeholder="Code pour désactiver" required><button class="button button-small button-ghost" type="submit">Désactiver</button></form>
+      ` : `
+        <button class="button button-small" type="button" data-founder-mfa-setup>Préparer l’authentificateur</button>
+        ${founderMfaSetup ? `
+          <div class="founder-console-note"><strong>Secret à enregistrer maintenant</strong><span><code>${escapeHtml(founderMfaSetup.secret)}</code></span><small>Ajoute-le dans ton application d’authentification, puis garde les codes de secours hors du site.</small></div>
+          <div class="maintenance-file-list">${(founderMfaSetup.recoveryCodes || []).map(code => `<code>${escapeHtml(code)}</code>`).join(' ')}</div>
+        ` : status.setupPending ? '<p class="muted">Une configuration est en attente. Tu peux la recommencer pour afficher un nouveau secret.</p>' : ''}
+        <form data-founder-mfa-form><input type="hidden" name="action" value="enable"><input name="code" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Code à 6 chiffres" required><button class="button button-small" type="submit">Activer</button></form>
+      `}
+    </section>
+  `;
+}
+
+function founderRuntimePanel(overview) {
+  const health = overview?.runtimeHealth || {};
+  const incidents = health.incidents || [];
+  const resolvedIncidents = health.resolvedIncidents || [];
+  const jobs = health.jobs || [];
+  const incidentContext = (item) => Object.entries(item.context || {})
+    .map(([key, value]) => `<span><strong>${escapeHtml(key)}</strong><code>${escapeHtml(typeof value === 'object' ? JSON.stringify(value) : value)}</code></span>`)
+    .join('');
+  return `
+    <section class="founder-storage-panel" aria-label="Surveillance Noctigarde">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Surveillance</p><h3>Incidents et tâches automatiques</h3><p class="muted">Chaque erreur technique reçoit un identifiant stable. Les tâches persistantes indiquent leur dernier passage et évitent les doublons entre instances.</p></div>${statusBadge(incidents.length ? `${incidents.length} incident(s)` : 'Aucun incident ouvert', !incidents.length)}</div>
+      <div class="maintenance-grid">
+        <section class="maintenance-section"><h4>Incidents ouverts</h4><div class="operation-list">${incidents.length ? incidents.map(item => `<div class="operation-row incident-row"><div><strong>${escapeHtml(item.incidentId)} · ${escapeHtml(item.source)}</strong><small>${escapeHtml(item.severity)} · ${escapeHtml(item.message)} · ${escapeHtml(item.occurrenceCount)} occurrence(s)</small><small>Premier signalement ${escapeHtml(formatAuditDate(item.firstSeenAt))} · dernier ${escapeHtml(formatAuditDate(item.lastSeenAt))}</small>${Object.keys(item.context || {}).length ? `<details><summary>Contexte technique</summary><div class="incident-context">${incidentContext(item)}</div></details>` : ''}</div>${overview?.access?.isFounder ? `<div class="incident-resolution"><input data-incident-resolution-note maxlength="1000" placeholder="Note de résolution facultative"><button class="button button-small button-ghost" type="button" data-resolve-incident="${escapeHtml(item.incidentId)}">Classer résolu</button></div>` : ''}</div>`).join('') : '<p class="muted">Aucun incident technique ouvert.</p>'}</div>${resolvedIncidents.length ? `<details class="maintenance-history"><summary>Incidents récemment résolus</summary><div class="operation-list">${resolvedIncidents.map(item => `<div class="operation-row"><div><strong>${escapeHtml(item.incidentId)} · ${escapeHtml(item.source)}</strong><small>${escapeHtml(item.resolutionNote || 'Résolu sans note')} · ${escapeHtml(formatAuditDate(item.resolvedAt))}</small></div></div>`).join('')}</div></details>` : ''}</section>
+        <section class="maintenance-section"><h4>Tâches persistantes</h4><div class="operation-list">${jobs.length ? jobs.slice(0, 30).map(item => `<div class="operation-row"><div><strong>${escapeHtml(item.jobKey)}</strong><small>${escapeHtml(item.lastStatus || 'inconnue')} · ${item.lastFinishedAt ? escapeHtml(formatAuditDate(item.lastFinishedAt)) : 'premier passage en cours'}${item.lastError ? ` · ${escapeHtml(item.lastError)}` : ''}</small></div></div>`).join('') : '<p class="muted">Aucune tâche enregistrée.</p>'}</div></section>
+      </div>
+    </section>`;
+}
+
+function founderFeatureFlagsPanel(overview) {
+  if (!overview?.access?.isFounder) return '';
+  const flags = overview.featureFlags || [];
+  return `
+    <section class="founder-storage-panel" aria-label="Interrupteurs d’urgence Noctigarde">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Contrôle immédiat</p><h3>Interrupteurs d’urgence</h3><p class="muted">Suspends uniquement la fonction en difficulté. Le reste de Noctigarde continue normalement.</p></div>${statusBadge(flags.some(item => !item.enabled) ? `${flags.filter(item => !item.enabled).length} suspendue(s)` : 'Tout est actif', flags.every(item => item.enabled))}</div>
+      <div class="feature-flag-grid">
+        ${flags.map(item => `<form class="feature-flag-row ${item.enabled ? 'is-enabled' : 'is-disabled'}" data-feature-flag-form><input type="hidden" name="featureKey" value="${escapeHtml(item.key)}"><div><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small>${item.updatedAt ? `<small>Dernière modification : ${escapeHtml(formatAuditDate(item.updatedAt))}</small>` : ''}</div><label><span>État</span><select name="enabled"><option value="true" ${item.enabled ? 'selected' : ''}>Active</option><option value="false" ${!item.enabled ? 'selected' : ''}>Suspendue</option></select></label><label><span>Motif</span><input name="reason" maxlength="500" value="${escapeHtml(item.reason || '')}" placeholder="Visible par les responsables"></label><button class="button button-small ${item.enabled ? 'button-ghost' : ''}" type="submit">Enregistrer</button></form>`).join('')}
+      </div>
+    </section>`;
+}
+
+function founderDatabasePortabilityPanel(overview) {
+  if (!overview?.access?.isFounder || !overview.databasePortability) return '';
+  const report = overview.databasePortability;
+  const topFindings = (report.findings || []).slice(0, 8);
+  return `
+    <section class="founder-storage-panel" aria-label="Préparation PostgreSQL">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Montée en charge</p><h3>Préparation PostgreSQL</h3><p class="muted">Noctigarde reste sur SQLite avec une seule instance. Ce relevé suit les adaptations nécessaires avant une future bascule.</p></div>${statusBadge(report.readyForAutomaticSwitch ? 'Prête' : `${report.findingCount} adaptation(s)`, report.readyForAutomaticSwitch)}</div>
+      <div class="maintenance-file-list">${topFindings.map(item => `<div class="maintenance-file-row"><span><strong>${escapeHtml(item.file)} · ${escapeHtml(item.key)}</strong><small>${escapeHtml(item.count)} occurrence(s) · ${escapeHtml(item.detail)}</small></span></div>`).join('') || '<p class="muted">Aucune syntaxe spécifique à SQLite détectée.</p>'}</div>
+      <p class="founder-console-note"><strong>Aucune bascule automatique</strong><span>La migration ne sera possible qu’après import de préproduction, comparaison des données et plan de retour arrière.</span></p>
+    </section>`;
+}
+
+function founderStagingPanel(overview) {
+  if (!overview?.access?.isFounder) return '';
+  const staging = overview.stagingValidation || {};
+  const identitiesReady = Boolean(staging.moderationMemberConfigured && staging.banTargetConfigured);
+  const ready = Boolean(staging.ready && staging.required && staging.realActions);
+  return `
+    <section class="founder-storage-panel" aria-label="Préproduction Discord">
+      <div class="panel-heading row-heading">
+        <div><p class="eyebrow">Validation avant déploiement</p><h3>Préproduction Discord</h3><p class="muted">Les essais doivent être exécutés sur un serveur privé avec deux comptes dédiés. Aucun identifiant sensible n’est affiché ici.</p></div>
+        ${statusBadge(ready ? 'Protection complète' : 'Configuration incomplète', ready)}
+      </div>
+      <div class="dashboard-metrics dashboard-kpis founder-premium-kpis">
+        <article class="dashboard-kpi"><span>Serveur privé</span><strong>${staging.configured ? 'Configuré' : 'Manquant'}</strong><small>environnement isolé</small></article>
+        <article class="dashboard-kpi"><span>Comptes de test</span><strong>${identitiesReady ? 'Configurés' : 'Manquants'}</strong><small>sanction et bannissement</small></article>
+        <article class="dashboard-kpi"><span>Contrôle bloquant</span><strong>${staging.required ? 'Actif' : 'Inactif'}</strong><small>interdit un démarrage non validé</small></article>
+        <article class="dashboard-kpi"><span>Sanctions réelles</span><strong>${staging.realActions ? 'Actives' : 'Inactives'}</strong><small>uniquement sur comptes dédiés</small></article>
+      </div>
+      ${ready && staging.required && staging.realActions
+        ? '<p class="founder-console-note"><strong>Protection complète active</strong><span>Chaque démarrage exige désormais la validation Discord réelle configurée.</span></p>'
+        : '<p class="founder-console-note"><strong>Activation volontaire requise</strong><span>Renseigne le serveur privé et les deux comptes dédiés avant d’activer le contrôle bloquant et les sanctions réelles.</span></p>'}
+      ${(staging.issues || []).length ? `<div class="maintenance-alerts">${staging.issues.map(issue => `<p>${escapeHtml(issue)}</p>`).join('')}</div>` : ''}
+    </section>`;
+}
+
+function founderPrivacyPanel(overview) {
+  if (!overview?.access?.isFounder) return '';
+  const requests = overview.privacyRequests || [];
+  return `
+    <section class="founder-storage-panel" aria-label="Demandes de confidentialité">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Confidentialité</p><h3>Demandes de données</h3><p class="muted">Une demande n’efface jamais automatiquement la base. Elle doit être contrôlée avec les sauvegardes et les obligations de conservation avant exécution.</p></div>${statusBadge(requests.length ? `${requests.length} en attente` : 'Aucune demande', !requests.length)}</div>
+      <div class="operation-list">${requests.length ? requests.map(item => `<div class="operation-row"><div><strong>${escapeHtml(item.requestKey)} · ${escapeHtml(item.requestType === 'guild_delete' ? 'Serveur' : 'Membre')}</strong><small>${escapeHtml(item.guildId || item.subjectUserId || 'sans cible')} · demandé par ${escapeHtml(item.requestedByUserId)} · ${escapeHtml(formatAuditDate(item.createdAt))}</small>${item.reason ? `<small>${escapeHtml(item.reason)}</small>` : ''}</div></div>`).join('') : '<p class="muted">Aucune demande de suppression en attente.</p>'}</div>
+    </section>`;
+}
+
+function criticalActionsPanel(overview) {
+  const actions = (overview?.criticalActions || []).filter((item) => item.actionType !== 'premium-access');
+  if (!actions.length) return '';
+  const labels = { 'restore-backup': 'Restauration', 'official-update': 'Annonce globale', 'reset-guild': 'Remise à zéro' };
+  return `
+    <section class="founder-storage-panel" aria-label="Validations critiques">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Double validation</p><h3>Actions critiques</h3><p class="muted">Le demandeur ne peut jamais valider sa propre action.</p></div></div>
+      <div class="maintenance-file-list">
+        ${actions.slice(0, 30).map(item => `
+          <div class="maintenance-file-row">
+            <span><strong>#${escapeHtml(item.id)} · ${escapeHtml(labels[item.actionType] || item.actionType)}</strong><small>${escapeHtml(item.summary)}</small><small>${escapeHtml(item.status)} · ${escapeHtml(formatAuditDate(item.createdAt))}</small></span>
+            ${item.status === 'pending' && String(item.requestedByUserId) !== String(currentUser?.id) ? `<span class="maintenance-file-actions"><button class="button button-small" type="button" data-critical-action="approve" data-request-id="${escapeHtml(item.id)}">Approuver</button><button class="button button-small button-ghost" type="button" data-critical-action="reject" data-request-id="${escapeHtml(item.id)}">Refuser</button></span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function founderOfficialUpdatePanel(overview) {
+  if (!overview?.access?.isFounder) return '';
+  return `
+    <section class="founder-storage-panel" aria-label="Annonce globale Noctigarde">
+      <div class="panel-heading"><p class="eyebrow">Publication protégée</p><h3>Annonce globale</h3><p class="muted">La publication reste en attente jusqu’à la validation d’une autre personne autorisée.</p></div>
+      <form data-founder-official-update class="operation-form-grid">
+        <input name="titleFr" maxlength="256" placeholder="Titre français" required>
+        <textarea name="bodyFr" maxlength="4000" placeholder="Message français" required></textarea>
+        <input name="titleEn" maxlength="256" placeholder="Titre anglais facultatif">
+        <textarea name="bodyEn" maxlength="4000" placeholder="Message anglais facultatif"></textarea>
+        <label><input name="includeSubscribers" type="checkbox"><span>Diffuser aux serveurs ayant configuré un salon de nouveautés</span></label>
+        <button class="button" type="submit">Soumettre à validation</button>
+      </form>
+    </section>
+  `;
+}
+
+function creatorStaffManagePanel(overview) {
+  return `
+    <section class="founder-storage-panel" aria-label="Accès staff Noctigarde">
+      <div class="founder-console-note">
+        <strong>Accès de régie</strong>
+        <span>L’accès exige les deux validations : ajout par le fondateur dans la Régie et rôle staff sur le Discord Noctigarde. Seul le fondateur peut modifier ces accès.</span>
+      </div>
+      ${canManageFounderPanel() ? `
+        <form class="creator-premium-form creator-staff-form" data-creator-staff-form>
+          <input type="hidden" name="action" value="add">
+          ${labelHelp('Ajouter un staff site', 'La personne doit déjà être sur le Discord Noctigarde et y posséder un rôle staff configuré. Utilise son ID Discord numérique complet.')}
+          <div class="creator-premium-row">
+            <input name="userId" placeholder="ID utilisateur Discord" required>
+            <button class="button button-small" type="submit">Ajouter staff</button>
+          </div>
+        </form>
+      ` : ''}
+      ${siteStaffList(overview)}
+    </section>
+  `;
+}
+
+function founderGuildInventoryPanel() {
+  const installedGuilds = guilds
+    .filter((guild) => guild.installed)
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+
+  return `
+    <section class="founder-storage-panel founder-guilds-panel" aria-label="Serveurs Noctigarde">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Parc Noctigarde</p>
+          <h3>Serveurs équipés</h3>
+          <p class="muted">Tous les serveurs sur lesquels Noctigarde est actuellement installé.</p>
+        </div>
+        <span class="status-badge is-ready">${escapeHtml(installedGuilds.length)} serveur(s)</span>
+      </div>
+      <label class="founder-guild-filter">
+        <span>Rechercher un serveur</span>
+        <input type="search" data-founder-guild-search placeholder="Nom ou ID Discord" autocomplete="off">
+      </label>
+      ${installedGuilds.length ? `
+        <div class="table-shell founder-guild-table-shell">
+          <table class="dashboard-table founder-guild-table">
+            <thead><tr><th>Serveur</th><th>État</th><th>Accès</th></tr></thead>
+            <tbody>
+              ${installedGuilds.map((guild) => {
+                const icon = safeDiscordImageUrl(guild.icon);
+                const searchValue = `${guild.name} ${guild.id}`.toLocaleLowerCase('fr');
+                const selected = guild.id === selectedGuildId;
+                return `
+                  <tr data-founder-guild-row data-founder-guild-search-value="${escapeHtml(searchValue)}">
+                    <td>
+                      <span class="founder-guild-identity">
+                        ${icon
+                          ? `<img src="${escapeHtml(icon)}" alt="">`
+                          : `<span class="founder-guild-fallback">${escapeHtml((guild.name || 'S').slice(0, 1).toUpperCase())}</span>`}
+                        <span><strong>${escapeHtml(guild.name)}</strong><small><code>${escapeHtml(guild.id)}</code></small></span>
+                      </span>
+                    </td>
+                    <td>${statusBadge('Noctigarde actif', true)}</td>
+                    <td><button class="button button-small button-ghost" type="button" data-select-guild="${escapeHtml(guild.id)}" ${selected ? 'disabled' : ''}>${selected ? 'Serveur ouvert' : 'Ouvrir'}</button></td>
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+          <p class="muted founder-guild-empty" data-founder-guild-empty hidden>Aucun serveur ne correspond à cette recherche.</p>
+        </div>
+      ` : '<p class="muted">Aucun serveur Noctigarde trouvé pour le moment.</p>'}
+    </section>
+  `;
+}
+
+function renderFounderPanel() {
+  if (!canShowFounderTab()) {
+    return '';
+  }
+
+  const overview = creatorOverview;
+  const access = overview?.access || currentSiteAccess || currentState?.siteAccess || {};
+  const summary = overview?.summary || { guildCount: 0 };
+
+  return `
+    <section class="dashboard-panel module-panel founder-premium-panel">
+      <div class="panel-heading row-heading">
+        <div>
+          <p class="eyebrow">Régie Noctigarde</p>
+          <h2>${access?.canManageSiteStaff ? 'Console fondateur' : 'Console staff'}</h2>
+          <p class="muted">${access?.canManageSiteStaff
+            ? 'Vue privée des accès site, des staffs autorisés et de la maintenance Noctigarde.'
+            : 'Vue privée de régie : lecture des accès et suivi global sans commandes fondatrices.'}</p>
+        </div>
+        <span class="status-badge is-site">${escapeHtml(siteAccessLabel(access))}</span>
+        <button class="button button-small button-ghost" type="button" data-refresh-creator-overview ${creatorOverviewLoading ? 'disabled' : ''}>
+          ${creatorOverviewLoading ? 'Lecture...' : 'Relire'}
+        </button>
+      </div>
+      <div class="dashboard-metrics dashboard-kpis founder-premium-kpis">
+        <article class="dashboard-kpi">
+          <span>Postes suivis</span>
+          <strong>${escapeHtml(summary.guildCount)}</strong>
+          <small>où Noctigarde est installé</small>
+        </article>
+      </div>
+      ${founderGuildInventoryPanel()}
+      ${founderSecurityPanel(overview)}
+      ${criticalActionsPanel(overview)}
+      ${founderOfficialUpdatePanel(overview)}
+      ${founderFeatureFlagsPanel(overview)}
+      ${founderRuntimePanel(overview)}
+      ${founderStagingPanel(overview)}
+      ${founderDatabasePortabilityPanel(overview)}
+      ${founderPrivacyPanel(overview)}
+      ${founderStoragePanel(overview)}
+      ${creatorStaffManagePanel(overview)}
+      ${creatorOverviewLoading && !overview ? '<p class="muted">Lecture de la régie Noctigarde...</p>' : ''}
+      ${overview?.generatedAt ? `<p class="muted">Dernière lecture : ${escapeHtml(formatAuditDate(overview.generatedAt))}</p>` : ''}
+    </section>
+  `;
+}
+
+function helpTip(text) {
+  const safeText = escapeHtml(text);
+
+  return `<button class="field-help" type="button" data-tooltip="${safeText}" aria-label="${safeText}">?</button>`;
+}
+
+function labelHelp(label, help, addon = '') {
+  return `<label><span>${escapeHtml(label)}</span>${addon} ${helpTip(help)}</label>`;
+}
+
+function communityStatusLabel(value) {
+  return ({
+    submitted: 'Reçue', reviewing: 'En lecture', interview: 'Entretien', accepted: 'Acceptée', rejected: 'Refusée', withdrawn: 'Retirée',
+    scheduled: 'Planifié', cancelled: 'Annulé', published: 'Publiée'
+  })[value] || value;
+}
+
+function emptyPanel(message) {
+  return `<p class="community-empty">${escapeHtml(message)}</p>`;
+}
+
+function renderCommunityPanel(state, roleOptions, channelOptions) {
+  const community = state.community || {};
+  const recruitment = community.recruitment || { forms: [], applications: [] };
+  const planning = community.planning || { shifts: [], absences: [] };
+  const suggestions = community.suggestions || [];
+  const analytics = community.analytics || {};
+  const themes = community.panelThemes || {};
+  const applicationRows = recruitment.applications.map((item) => `
+    <article class="community-record">
+      <header><div><span>Candidature #${escapeHtml(item.id)}</span><strong>${escapeHtml(item.formTitle || 'Recrutement')}</strong></div>${statusBadge(communityStatusLabel(item.status), item.status === 'accepted')}</header>
+      <p>Membre <code>${escapeHtml(item.userId)}</code> · ${escapeHtml(formatAuditDate(item.submittedAt))}</p>
+      <details><summary>Lire les réponses</summary><div class="community-answer-list">${item.answers.map(answer => `<p><strong>${escapeHtml(answer.question)}</strong><span>${escapeHtml(answer.answer || 'Sans réponse')}</span></p>`).join('')}</div></details>
+      <form data-action-form="community-review-application" class="operation-form-grid">
+        <input type="hidden" name="applicationId" value="${escapeHtml(item.id)}">
+        <select name="status" required><option value="reviewing">Passer en lecture</option><option value="interview">Prévoir un entretien</option><option value="accepted">Accepter</option><option value="rejected">Refuser</option></select>
+        <input type="datetime-local" name="interviewAt" aria-label="Date de l’entretien">
+        <textarea name="staffNote" maxlength="2000" placeholder="Réponse visible par la personne"></textarea>
+        <button class="button button-small" type="submit">Mettre à jour</button>
+      </form>
+    </article>`).join('');
+  const shiftRows = planning.shifts.map((shift) => `
+    <article class="community-record">
+      <header><div><span>Créneau #${escapeHtml(shift.id)}</span><strong>${escapeHtml(shift.title)}</strong></div>${statusBadge(`${shift.counts.available}/${shift.capacity || '∞'} présents`, true)}</header>
+      <p>${escapeHtml(formatAuditDate(shift.startsAt))} → ${escapeHtml(formatAuditDate(shift.endsAt))}</p>
+      <div class="community-response-strip"><span>${escapeHtml(shift.counts.available)} disponibles</span><span>${escapeHtml(shift.counts.maybe)} incertains</span><span>${escapeHtml(shift.counts.unavailable)} indisponibles</span></div>
+      <form data-action-form="community-cancel-shift"><input type="hidden" name="shiftId" value="${escapeHtml(shift.id)}"><button class="button button-small button-ghost" type="submit">Annuler ce créneau</button></form>
+    </article>`).join('');
+  const suggestionRows = suggestions.map((item) => `
+    <article class="community-record">
+      <header><div><span>Suggestion #${escapeHtml(item.id)}</span><strong>${escapeHtml(item.title)}</strong></div>${statusBadge(`${item.score} point(s)`, item.score > 0)}</header>
+      <p>${escapeHtml(item.body)}</p>
+      <small>${escapeHtml(communityStatusLabel(item.status))} · ${escapeHtml(item.voteCount)} vote(s) · membre <code>${escapeHtml(item.userId)}</code></small>
+      ${item.status !== 'published' ? `<form data-action-form="community-review-suggestion" class="operation-form-grid">
+        <input type="hidden" name="suggestionId" value="${escapeHtml(item.id)}">
+        <select name="status"><option value="reviewing">Mettre en étude</option><option value="accepted">Accepter</option><option value="rejected">Refuser</option></select>
+        <label><span>Salon si acceptée</span><select name="publishChannelId"><option value="">Ne pas publier maintenant</option>${channelOptions}</select></label>
+        <textarea name="staffResponse" maxlength="2000" placeholder="Réponse officielle">${escapeHtml(item.staffResponse || '')}</textarea>
+        <button class="button button-small" type="submit">Enregistrer la décision</button>
+      </form>` : ''}
+      ${item.status === 'accepted' ? `<form data-action-form="community-publish-suggestion" class="inline-action-row"><input type="hidden" name="suggestionId" value="${escapeHtml(item.id)}"><select name="channelId" required>${channelOptions}</select><button class="button button-small" type="submit">Publier sur Discord</button></form>` : ''}
+    </article>`).join('');
+  const helpItems = [
+    ['Installation', 'Configurer Noctigarde', 'Choisis le profil, le rôle de service, le salon des registres, les responsables et le salon des nouveautés.'],
+    ['Service', 'Publier le panneau', 'Ouvre Configuration ou Service, choisis le salon puis publie le panneau de prise de service.'],
+    ['Tickets', 'Recevoir les demandes', 'Configure les responsables par type, puis publie le bureau d’accueil dans un salon public.'],
+    ['Modération', 'Protéger le serveur', 'Vérifie d’abord le diagnostic des permissions, puis active seulement les règles utiles.'],
+    ['Recrutement', 'Ouvrir une campagne', 'Crée un formulaire ici. Les membres répondront depuis leur espace personnel.'],
+    ['Planning', 'Préparer une équipe', 'Crée un créneau avec une capacité et un rappel. Les réponses sont visibles en direct.'],
+    ['Suggestions', 'Consulter les idées', 'Les membres proposent et votent depuis leur espace. Le staff décide avant toute publication.'],
+    ['Panneaux', 'Adapter l’identité', 'Personnalise les textes, la couleur et l’image, puis republie le panneau concerné.']
+  ];
+  const panelForm = (type, label, theme = {}) => {
+    const buttonFields = type === 'service'
+      ? [['Start', 'Prendre service'], ['End', 'Fin service'], ['Hours', 'Mes heures'], ['Active', 'En service']]
+      : [['Support', 'Support'], ['Report', 'Signalement'], ['Recruitment', 'Recrutement'], ['Partnership', 'Partenariat'], ['Other', 'Autre']];
+    const buttonValues = theme.buttonLabels || {};
+    const previewButtons = type === 'service'
+      ? [buttonValues.start || 'Prendre service', buttonValues.end || 'Fin service', buttonValues.hours || 'Mes heures', buttonValues.active || 'En service']
+      : [buttonValues.support || 'Support', buttonValues.report || 'Signalement', buttonValues.recruitment || 'Recrutement', buttonValues.partnership || 'Partenariat', buttonValues.other || 'Autre'];
+    return `
+    <form data-action-form="community-save-panel-theme" class="community-panel-editor">
+      <input type="hidden" name="panelType" value="${escapeHtml(type)}">
+      <div class="panel-heading"><div><p class="eyebrow">${escapeHtml(label)}</p><h3>Identité du panneau</h3></div><span class="panel-color-preview" style="--panel-preview-color:${escapeHtml(theme.color || '#24D7D0')}"></span></div>
+      <label><span>Titre</span><input name="title" maxlength="120" value="${escapeHtml(theme.title || '')}" placeholder="Garder le titre Noctigarde"></label>
+      <label><span>Texte d’accueil</span><textarea name="description" maxlength="2000" placeholder="Garder le texte Noctigarde">${escapeHtml(theme.description || '')}</textarea></label>
+      <div class="form-row"><label><span>Couleur</span><input name="color" type="color" value="${escapeHtml(theme.color || '#24D7D0')}"></label><label><span>Pied de panneau</span><input name="footer" maxlength="200" value="${escapeHtml(theme.footer || '')}" placeholder="Texte facultatif"></label></div>
+      <label><span>Illustration HTTPS</span><input name="imageUrl" type="url" maxlength="1000" value="${escapeHtml(theme.imageUrl || '')}" placeholder="https://..."></label>
+      <fieldset class="community-button-labels"><legend>Texte des boutons</legend>${buttonFields.map(([key, fallback]) => `<label><span>${escapeHtml(fallback)}</span><input name="button${key}Label" maxlength="80" value="${escapeHtml(buttonValues[key[0].toLowerCase() + key.slice(1)] || '')}" placeholder="${escapeHtml(fallback)}"></label>`).join('')}</fieldset>
+      <div class="discord-panel-preview" data-panel-preview>
+        <div class="discord-panel-preview-accent"></div>
+        <div><strong data-panel-preview-title>${escapeHtml(theme.title || label)}</strong><p data-panel-preview-description>${escapeHtml(theme.description || 'Le texte du panneau apparaîtra ici.')}</p>${theme.imageUrl ? `<img data-panel-preview-image src="${escapeHtml(theme.imageUrl)}" alt="">` : '<img data-panel-preview-image alt="" hidden>'}<div class="discord-panel-preview-buttons">${previewButtons.map(value => `<span>${escapeHtml(value)}</span>`).join('')}</div></div>
+      </div>
+      <button class="button" type="submit">Enregistrer le style</button>
+    </form>`;
+  };
+
+  return `<section class="dashboard-panel community-suite-panel">
+    <div class="panel-heading row-heading"><div><p class="eyebrow">Vie du serveur</p><h2>Équipe et communauté</h2><p class="muted">Recrutements, disponibilités, idées et suivi depuis un même bureau.</p></div><span class="status-badge is-ready">Actif</span></div>
+    <section class="community-section community-recruitment">
+      <div class="community-section-heading"><div><span>Recrutements</span><h3>Campagnes et candidatures</h3></div><strong>${escapeHtml(recruitment.applications.filter(item => ['submitted', 'reviewing', 'interview'].includes(item.status)).length)} à traiter</strong></div>
+      <div class="community-two-column"><form data-action-form="community-create-recruitment-form" class="community-create-form">
+        <label><span>Nom du recrutement</span><input name="title" maxlength="100" required placeholder="Ex. Recrutement modération"></label>
+        <label><span>Présentation</span><textarea name="description" maxlength="1000" placeholder="Explique le rôle recherché"></textarea></label>
+        <label><span>Questions, une par ligne</span><textarea name="questions" required placeholder="Pourquoi souhaites-tu nous rejoindre ?&#10;Quelles sont tes disponibilités ?"></textarea></label>
+        <div class="form-row"><label><span>Rôle après acceptation</span><select name="targetRoleId">${roleOptions}</select></label><label><span>Salon de suivi</span><select name="reviewChannelId">${channelOptions}</select></label></div>
+        <button class="button" type="submit">Ouvrir le recrutement</button>
+      </form><div class="community-record-list">${recruitment.forms.length ? recruitment.forms.map(form => `<article class="community-compact-record"><div><strong>${escapeHtml(form.title)}</strong><small>${escapeHtml(form.questions.length)} question(s) · ${form.open ? 'Ouvert' : 'Fermé'}</small></div><form data-action-form="community-toggle-recruitment-form"><input type="hidden" name="formId" value="${escapeHtml(form.id)}"><input type="hidden" name="open" value="${form.open ? 'false' : 'true'}"><button class="button button-small button-ghost" type="submit">${form.open ? 'Fermer' : 'Rouvrir'}</button></form></article>`).join('') : emptyPanel('Aucun recrutement créé.')}</div></div>
+      <div class="community-record-list community-applications-list">${applicationRows || emptyPanel('Aucune candidature reçue.')}</div>
+    </section>
+    <section class="community-section community-planning">
+      <div class="community-section-heading"><div><span>Planning</span><h3>Créneaux et disponibilités</h3></div><strong>${escapeHtml(planning.shifts.length)} à venir</strong></div>
+      <form data-action-form="community-create-shift" class="community-create-form community-shift-form">
+        <label><span>Nom du créneau</span><input name="title" maxlength="100" required placeholder="Ex. Service du vendredi soir"></label>
+        <label><span>Début</span><input type="datetime-local" name="startsAt" required></label><label><span>Fin</span><input type="datetime-local" name="endsAt" required></label>
+        <label><span>Places</span><input type="number" name="capacity" min="0" max="500" value="0"><small>0 signifie sans limite.</small></label>
+        <label><span>Rappel</span><select name="reminderMinutes"><option value="30">30 minutes avant</option><option value="60" selected>1 heure avant</option><option value="1440">1 jour avant</option></select></label>
+        <label><span>Rôle à prévenir</span><select name="roleId">${roleOptions}</select></label><label><span>Salon du rappel</span><select name="channelId">${channelOptions}</select></label>
+        <label class="community-wide-field"><span>Consignes</span><textarea name="description" maxlength="1000"></textarea></label><button class="button" type="submit">Créer le créneau</button>
+      </form>
+      <div class="community-record-list">${shiftRows || emptyPanel('Aucun créneau à venir.')}</div>
+      ${planning.absences.length ? `<div class="community-absence-strip"><strong>Absences déclarées</strong>${planning.absences.map(item => `<span><code>${escapeHtml(item.userId)}</code> · ${escapeHtml(formatAuditDate(item.startsAt))} → ${escapeHtml(formatAuditDate(item.endsAt))}</span>`).join('')}</div>` : ''}
+    </section>
+    <section class="community-section community-suggestions"><div class="community-section-heading"><div><span>Boîte à idées</span><h3>Propositions de la communauté</h3></div><strong>${escapeHtml(suggestions.length)} idée(s)</strong></div><div class="community-record-list">${suggestionRows || emptyPanel('Aucune suggestion pour le moment.')}</div></section>
+    <section class="community-section community-panels"><div class="community-section-heading"><div><span>Identité Discord</span><h3>Personnalisation des panneaux</h3></div></div><div class="community-two-column">${panelForm('service', 'Panneau de service', themes.service)}${panelForm('tickets', 'Panneau des tickets', themes.tickets)}</div></section>
+    <section class="community-section community-analytics"><div class="community-section-heading"><div><span>Lecture d’activité</span><h3>Statistiques responsables</h3></div><small>30 derniers jours</small></div><div class="community-analytics-grid">
+      <article><span>Services</span><strong>${escapeHtml(analytics.services30d || 0)}</strong><small>${escapeHtml(analytics.serviceUsers30d || 0)} membre(s)</small></article><article><span>Tickets ouverts</span><strong>${escapeHtml(analytics.ticketsOpen || 0)}</strong><small>${escapeHtml(analytics.tickets30d || 0)} créés en 30 jours</small></article><article><span>Modération</span><strong>${escapeHtml(analytics.moderation30d || 0)}</strong><small>${escapeHtml(analytics.automod24h || 0)} détection(s) aujourd’hui</small></article><article><span>Première réponse</span><strong>${analytics.averageFirstResponseMinutes == null ? '—' : `${escapeHtml(analytics.averageFirstResponseMinutes)} min`}</strong><small>Moyenne des tickets répondus</small></article>
+    </div><div class="community-two-column"><article class="community-insight"><h4>Heures les plus actives</h4>${analytics.busiestHours?.length ? analytics.busiestHours.map(item => `<p><span>${String(item.hour).padStart(2, '0')} h</span><strong>${escapeHtml(item.count)} session(s)</strong></p>`).join('') : emptyPanel('Pas encore assez de services.')}</article><article class="community-insight"><h4>Charge des responsables</h4>${analytics.staffLoad?.length ? analytics.staffLoad.map(item => `<p><span>${item.userId === 'unassigned' ? 'Sans référent' : `<code>${escapeHtml(item.userId)}</code>`}</span><strong>${escapeHtml(item.count)} ticket(s)</strong></p>`).join('') : emptyPanel('Aucun ticket en attente.')}</article></div></section>
+    <section class="community-section community-help"><div class="community-section-heading"><div><span>Centre d’aide</span><h3>Trouver rapidement un réglage</h3></div></div><label class="community-help-search"><span>Que veux-tu faire ?</span><input type="search" data-community-help-search placeholder="Ex. recrutement, panneau, sanction..."></label><div class="community-help-grid">${helpItems.map(([category, title, detail]) => `<article data-community-help-item data-search="${escapeHtml(`${category} ${title} ${detail}`.toLocaleLowerCase('fr'))}"><span>${escapeHtml(category)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></article>`).join('')}</div><p class="member-empty" data-community-help-empty hidden>Aucun résultat. Essaie un mot plus simple.</p></section>
+  </section>`;
+}
+
+const DASHBOARD_TABS = [
+  {
+    id: 'overview',
+    label: 'Accueil',
+    eyebrow: 'Synthèse',
+    title: 'Accueil serveur',
+    description: 'État, alertes et actions récentes'
+  },
+  {
+    id: 'setup',
+    label: 'Premiers pas',
+    eyebrow: 'Guide',
+    title: 'Configuration guidée',
+    description: 'Installer dans le bon ordre'
+  },
+  {
+    id: 'configuration',
+    label: 'Configuration',
+    eyebrow: 'Base',
+    title: 'Configuration',
+    description: 'Langue, rôles et logs'
+  },
+  {
+    id: 'service',
+    label: 'Service & salaires',
+    eyebrow: 'Heures',
+    title: 'Service et salaires',
+    description: 'Présences, barèmes et versements'
+  },
+  {
+    id: 'dossiers',
+    label: 'Tickets',
+    eyebrow: 'Support',
+    title: 'Tickets et dossiers',
+    description: 'Demandes privées et suivi staff'
+  },
+  {
+    id: 'moderation',
+    label: 'Modération',
+    eyebrow: 'Sécurité',
+    title: 'Modération',
+    description: 'Sanctions, auto-rôle et permissions'
+  },
+  {
+    id: 'embeds',
+    label: 'Annonces',
+    eyebrow: 'Messages',
+    title: 'Annonces',
+    description: 'Messages propres sous Noctigarde'
+  },
+  {
+    id: 'audit',
+    label: 'Historique',
+    eyebrow: 'Traces',
+    title: 'Historique',
+    description: 'Retrouver qui a fait quoi'
+  },
+  {
+    id: 'operations',
+    label: 'Pilotage',
+    eyebrow: 'Suivi',
+    title: 'Pilotage et rapports',
+    description: 'Alertes, exports, essais et contrôles'
+  },
+  {
+    id: 'community',
+    label: 'Équipe & communauté',
+    eyebrow: 'Organisation',
+    title: 'Équipe et communauté',
+    description: 'Recrutements, planning, idées et statistiques'
+  },
+  {
+    id: 'founder',
+    label: 'Accès au site',
+    eyebrow: 'Régie',
+    title: 'Accès au site',
+    description: 'Fonda, staff et maintenance'
+  }
+];
+
+const DASHBOARD_SUBTABS = {
+  overview: [
+    { id: 'summary', label: 'Synthèse', description: 'État du jour et notifications', selectors: ['.today-grid', '.notification-center'] },
+    { id: 'path', label: 'Parcours', description: 'Étapes et outils disponibles', selectors: ['.dashboard-path', '.plan-scope-grid'] },
+    { id: 'details', label: 'Détails', description: 'Configuration, alertes et actions', selectors: ['.server-home-grid'] }
+  ],
+  setup: [
+    { id: 'base', label: 'Base', description: 'Langue et rôle de service', selectors: ['.setup-steps > .setup-step:nth-child(1)', '.setup-steps > .setup-step:nth-child(2)'] },
+    { id: 'channels', label: 'Salons et accès', description: 'Logs, staff et nouveautés', selectors: ['.setup-steps > .setup-step:nth-child(3)', '.setup-steps > .setup-step:nth-child(4)', '.setup-steps > .setup-step:nth-child(5)'] },
+    { id: 'profile', label: 'Profil', description: 'Conseils adaptés au serveur', selectors: ['.server-preset-panel', '.setup-footer'] }
+  ],
+  configuration: [
+    { id: 'general', label: 'Général', description: 'Réglages et panneaux Discord', selectors: ['.config-hub-grid'] },
+    { id: 'updates', label: 'Nouveautés', description: 'Livraison des annonces officielles', selectors: ['.official-update-history'] },
+    { id: 'access', label: 'Accès et réparation', description: 'Rôles staff et références Discord', selectors: ['.staff-permissions-panel', '.repair-center-panel'] },
+    { id: 'privacy', label: 'Données', description: 'Conservation, export et suppression', selectors: ['.privacy-center-panel'] }
+  ],
+  service: [
+    { id: 'attendance', label: 'Présences', description: 'Agents actifs et registres', selectors: ['.service-overview-panel'] },
+    { id: 'payroll', label: 'Salaires', description: 'Semaine, versements et archives', selectors: ['.payroll-panel'] },
+    { id: 'actions', label: 'Actions', description: 'Ouverture, clôture et synchronisation', selectors: ['.service-actions-panel', '.inline-premium-panel'] }
+  ],
+  dossiers: [
+    { id: 'desk', label: 'Bureau', description: 'Publication et état des panneaux', selectors: ['.dossier-permission-alert', '.dossier-quota-alert', '[data-action-form="publish-dossier-panel"]', '.dossier-repair-form'] },
+    { id: 'access', label: 'Confidentialité', description: 'Responsables et accès par catégorie', selectors: ['.dossier-explain-card', '.dossier-type-roles'] },
+    { id: 'workflow', label: 'Traitement', description: 'Formulaires, réponses et délais', selectors: ['.dossier-premium-settings', '.dossier-templates-panel', '.dossier-stats-panel'] },
+    { id: 'registry', label: 'Registre', description: 'File d’attente et historique', selectors: ['.dossier-list-card'] }
+  ],
+  moderation: [
+    { id: 'automod', label: 'Protection', description: 'Permissions, arrivée et garde automatique', selectors: ['.diagnostics-panel', '.moderation-note', '.automod-card'] },
+    { id: 'sanctions', label: 'Sanctions', description: 'Mesures et registre disciplinaire', selectors: ['[data-action-form="warn"]', '[data-action-form="timeout"]', '[data-action-form="untimeout"]', '[data-action-form="kick"]', '[data-action-form="ban"]', '[data-action-form="tempban"]', '[data-action-form="unban"]', '[data-action-form="edit-case"]', '[data-action-form="delete-case"]', '[data-action-form="unwarn"]', '.moderation-cases-note'] },
+    { id: 'channels', label: 'Salons', description: 'Nettoyage, verrouillage et archives', selectors: ['[data-action-form="purge"]', '[data-action-form="lock"]', '[data-action-form="unlock"]', '[data-action-form="slowmode"]', '.purge-archive-history'] },
+    { id: 'critical', label: 'Actions critiques', description: 'Remise à zéro et validations', selectors: ['[data-action-form="reset-guild"]', '#moderation-tools > .maintenance-file-list'] }
+  ],
+  embeds: [
+    { id: 'create', label: 'Créer', description: 'Nouvelle annonce Noctigarde', selectors: ['[data-action-form="custom-embed-create"]'] },
+    { id: 'edit', label: 'Modifier', description: 'Texte, couleur et médias', selectors: ['[data-action-form="custom-embed-edit"]'] },
+    { id: 'manage', label: 'Gérer', description: 'Liste et suppression', selectors: ['[data-action-form="custom-embed-delete"]', '.announcements-panel .inline-form'] }
+  ],
+  audit: [
+    { id: 'journal', label: 'Journal', description: 'Filtres et actions enregistrées', selectors: ['.audit-overview', '[data-audit-filter]', '.audit-scope-note', '.audit-table-shell'] },
+    { id: 'member', label: 'Recherche membre', description: 'Historique consolidé par ID', selectors: ['.global-lookup-panel'] }
+  ],
+  operations: [
+    { id: 'alerts', label: 'Notifications', description: 'Points qui demandent une action', selectors: ['.operations-panel > .notification-center'] },
+    { id: 'reports', label: 'Rapports', description: 'Exports et envois automatiques', selectors: ['[data-operation-section="reports"]'] },
+    { id: 'announcements', label: 'Programmation', description: 'Brouillons et annonces planifiées', selectors: ['[data-operation-section="announcements"]'] },
+    { id: 'testing', label: 'Essais', description: 'Simulations et validation Noctigarde', selectors: ['[data-operation-section="testing"]'] }
+  ],
+  community: [
+    { id: 'recruitment', label: 'Recrutements', description: 'Formulaires et décisions', selectors: ['.community-recruitment'] },
+    { id: 'planning', label: 'Planning', description: 'Créneaux, réponses et absences', selectors: ['.community-planning'] },
+    { id: 'suggestions', label: 'Suggestions', description: 'Idées, votes et publication', selectors: ['.community-suggestions'] },
+    { id: 'panels', label: 'Panneaux', description: 'Identité des messages Discord', selectors: ['.community-panels'] },
+    { id: 'analytics', label: 'Statistiques', description: 'Activité et charge des équipes', selectors: ['.community-analytics'] },
+    { id: 'help', label: 'Aide', description: 'Recherche adaptée au serveur', selectors: ['.community-help'] }
+  ],
+  founder: [
+    { id: 'servers', label: 'Serveurs', description: 'Parc équipé de Noctigarde', selectors: ['[aria-label="Serveurs Noctigarde"]'] },
+    { id: 'security', label: 'Sécurité', description: 'Double protection et validations', selectors: ['[aria-label="Double sécurité fondatrice"]', '[aria-label="Validations critiques"]'] },
+    { id: 'publishing', label: 'Publication', description: 'Annonce globale protégée', selectors: ['[aria-label="Annonce globale Noctigarde"]'] },
+    { id: 'health', label: 'Surveillance', description: 'Incidents, tâches et préproduction', selectors: ['[aria-label="Surveillance Noctigarde"]', '[aria-label="Préproduction Discord"]'] },
+    { id: 'storage', label: 'Données', description: 'Confidentialité, stockage et sauvegardes', selectors: ['[aria-label="Demandes de confidentialité"]', '[aria-label="Centre de maintenance Noctigarde"]', '[aria-label="Stockage Noctigarde"]'] },
+    { id: 'staff', label: 'Équipe', description: 'Accès de la régie', selectors: ['[aria-label="Accès staff Noctigarde"]'] }
+  ]
+};
+
+function dashboardSubtabDefinitions(tabId) {
+  return DASHBOARD_SUBTABS[tabId] || [];
+}
+
+function renderDashboardSubtabSummary(tabId) {
+  const definitions = dashboardSubtabDefinitions(tabId);
+  if (!definitions.length) return '';
+  const selected = activeDashboardSubtabs[tabId] || definitions[0].id;
+  return `
+    <nav class="dashboard-subnav" aria-label="Sommaire de l’onglet">
+      <div class="dashboard-subnav-heading"><span>Sommaire</span></div>
+      <div class="dashboard-subtabs" role="tablist">
+        ${definitions.map(item => `
+          <button type="button" class="dashboard-subtab${item.id === selected ? ' is-active' : ''}" data-dashboard-subtab="${escapeHtml(item.id)}" data-dashboard-subtab-parent="${escapeHtml(tabId)}" role="tab" aria-selected="${item.id === selected ? 'true' : 'false'}">
+            <strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small>
+          </button>
+        `).join('')}
+      </div>
+    </nav>`;
+}
+
+function applyDashboardSubtabs(root = document) {
+  const tabId = activeDashboardTab;
+  const definitions = dashboardSubtabDefinitions(tabId);
+  const panel = $(`[data-dashboard-tab-panel="${tabId}"]`, root);
+  if (!panel || !definitions.length) return;
+
+  const matches = new Map(definitions.map(item => [item.id, item.selectors.flatMap(selector => $$(selector, panel))]));
+  const available = definitions.filter(item => (matches.get(item.id) || []).length > 0);
+  const selected = available.some(item => item.id === activeDashboardSubtabs[tabId])
+    ? activeDashboardSubtabs[tabId]
+    : (available[0]?.id || definitions[0].id);
+  activeDashboardSubtabs[tabId] = selected;
+
+  const allTargets = new Set(Array.from(matches.values()).flat());
+  allTargets.forEach(element => {
+    element.dataset.dashboardSubtabTarget = 'true';
+    element.hidden = true;
+  });
+  (matches.get(selected) || []).forEach(element => { element.hidden = false; });
+
+  $$('[data-dashboard-subtab]', panel).forEach(button => {
+    const availableButton = available.some(item => item.id === button.dataset.dashboardSubtab);
+    const active = button.dataset.dashboardSubtab === selected;
+    button.hidden = !availableButton;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+
+  if (tabId === 'moderation') {
+    ['#moderation', '#moderation-tools'].forEach(selector => {
+      const container = $(selector, panel);
+      if (!container) return;
+      container.hidden = !(matches.get(selected) || []).some(element => container.contains(element));
+    });
+  }
+}
+
+function canShowFounderTab(state = currentState) {
+  return Boolean(
+    canViewCreatorOverview
+    || currentSiteAccess?.canViewSitePanel
+    || state?.creator?.canViewCreatorOverview
+    || state?.creator?.canViewPremiumOverview
+    || state?.siteAccess?.canViewSitePanel
+    || creatorOverview?.canView
+  );
+}
+
+function canManageFounderPanel() {
+  return Boolean(
+    currentSiteAccess?.canManageSystem
+    || currentSiteAccess?.canManageSiteStaff
+    || creatorOverview?.access?.canManageSystem
+    || creatorOverview?.access?.canManagePremium
+    || creatorOverview?.access?.canManageSiteStaff
+    || currentState?.siteAccess?.canManageSystem
+    || currentState?.siteAccess?.canManagePremium
+    || currentState?.siteAccess?.canManageSiteStaff
+  );
+}
+
+function siteAccessLabel(access = currentSiteAccess) {
+  if (access?.isFounder || access?.role === 'founder') return 'Fondateur';
+  if (access?.isStaff || access?.role === 'staff') return 'Régie staff';
+  return 'Utilisateur';
+}
+
+function availableDashboardTabs(state = currentState) {
+  return DASHBOARD_TABS.filter((tab) => tab.id !== 'founder' || canShowFounderTab(state));
+}
+
+function renderDashboardTabs(state) {
+  const tabs = availableDashboardTabs(state);
+  const activeTab = tabs.find((tab) => tab.id === activeDashboardTab) || tabs[0] || DASHBOARD_TABS[0];
+  const syncBadge = dashboardHydrating
+    ? '<span class="status-badge is-syncing">Actualisation</span>'
+    : '';
+
+  return `
+    <section class="dashboard-control-panel">
+      <div class="western-dashboard-masthead">
+        <div class="western-dashboard-masthead-copy">
+          <span>Bureau territorial</span>
+          <strong>Registre Noctigarde</strong>
+          <small>Surveillance, service et intendance</small>
+        </div>
+        <img src="assets/western-cowboy-hat.webp" alt="" width="240" height="160">
+      </div>
+      <div class="control-summary">
+        <p class="eyebrow">Serveur sélectionné</p>
+        <h2>${escapeHtml(activeTab.title)}</h2>
+        <p>${escapeHtml(state.guild.name)}</p>
+      </div>
+      <div class="control-status">
+        ${syncBadge}
+        <button class="button button-small button-ghost" type="button" data-open-guild-drawer aria-controls="guild-drawer" aria-expanded="false">Changer de serveur</button>
+      </div>
+      <nav class="dashboard-primary-nav" aria-label="Sections du dashboard">
+        ${tabs.map((tab) => `
+          <button
+            type="button"
+            class="dashboard-nav-item${tab.id === activeDashboardTab ? ' is-active' : ''}"
+            data-dashboard-tab="${tab.id}"
+            aria-pressed="${tab.id === activeDashboardTab ? 'true' : 'false'}"
+          >
+            <span class="dashboard-nav-kicker">${escapeHtml(tab.eyebrow)}</span>
+            <span class="dashboard-nav-copy">
+              <strong>${escapeHtml(tab.label)}</strong>
+              <small>${escapeHtml(tab.description)}</small>
+            </span>
+          </button>
+        `).join('')}
+      </nav>
+    </section>
+  `;
+}
+
+function tabPanel(id, renderContent) {
+  const isActive = id === activeDashboardTab;
+  const content = isActive
+    ? (typeof renderContent === 'function' ? renderContent() : renderContent)
+    : '';
+
+  return `
+    <section class="dashboard-tab-panel${isActive ? ' is-active' : ''}" data-dashboard-tab-panel="${id}" ${isActive ? '' : 'hidden'}>
+      ${isActive ? renderDashboardSubtabSummary(id) : ''}
+      ${content}
+    </section>
+  `;
+}
+
+function renderDashboard() {
+  const main = $('[data-dashboard-main]');
+  revokeUploadPreviewUrls();
+
+  if (!currentState) {
+    main.innerHTML = dashboardHydrating || selectedGuildId
+      ? renderDashboardLoadingState()
+      : `
+        <div class="empty-state">
+          <img src="assets/noctigarde-mark.png" alt="">
+          <h2>Sélectionne un serveur</h2>
+          <p>Choisis un serveur pour voir les réglages et les actions disponibles.</p>
+        </div>
+      `;
+    return;
+  }
+
+  const state = currentState;
+  const tabs = availableDashboardTabs(state);
+
+  if (!tabs.some((tab) => tab.id === activeDashboardTab)) {
+    activeDashboardTab = tabs[0]?.id || 'overview';
+  }
+
+  const optionMarkup = {};
+  const getRoleOptions = () => (optionMarkup.roles ??= optionList(state.roles, state.config.serviceRoleId, 'Choisir un rôle'));
+  const getAutoRoleOptions = () => (optionMarkup.autoRoles ??= optionList(state.roles, state.config.autoRoleId, 'Choisir un rôle automatique'));
+  const getCommandRoleOptions = () => (optionMarkup.commandRoles ??= optionList(state.roles, null, 'Choisir un rôle autorisé'));
+  const getDossierRoleOptions = () => (optionMarkup.dossierRoles ??= optionList(state.roles, null, 'Choisir un rôle responsable'));
+  const getPingRoleOptions = () => (optionMarkup.pingRoles ??= optionList(state.roles, null, 'Aucun ping de rôle'));
+  const getChannelOptions = () => (optionMarkup.channels ??= optionList(state.channels, state.config.logChannelId, 'Choisir un salon'));
+  const getStatusChannelOptions = () => (optionMarkup.statusChannels ??= optionList(state.channels, state.config.statusChannelId, 'Choisir un salon statut'));
+  const getUpdatesChannelOptions = () => (optionMarkup.updatesChannels ??= optionList(state.channels, state.config.updatesChannelId, 'Choisir le salon des nouveautés'));
+  const getUpdatesRoleOptions = () => (optionMarkup.updatesRoles ??= optionList(state.roles, state.config.updatesPingRoleId, 'Choisir un rôle à prévenir'));
+  const premiumBadge = '<span class="status-badge">Noctigarde</span>';
+  const premiumTag = '';
+
+  main.innerHTML = `
+    ${renderDashboardTabs(state)}
+    <div class="dashboard-tab-stage is-plan-free">
+      ${tabPanel('overview', () => renderServerHome(state, premiumBadge))}
+
+      ${tabPanel('setup', () => renderSetupAssistant(state, getRoleOptions(), getCommandRoleOptions(), getChannelOptions(), getUpdatesChannelOptions()))}
+
+      ${tabPanel('configuration', () => renderConfigurationHub(state, getChannelOptions(), getStatusChannelOptions(), getUpdatesChannelOptions(), getUpdatesRoleOptions()))}
+
+      ${tabPanel('service', () => renderServicePanel(state, premiumBadge, premiumTag))}
+
+      ${tabPanel('embeds', () => renderEmbedsPanel(
+        state,
+        getChannelOptions(),
+        getPingRoleOptions(),
+        premiumBadge
+      ))}
+
+      ${tabPanel('dossiers', () => renderDossiersPanel(
+        state,
+        getChannelOptions(),
+        getDossierRoleOptions(),
+        premiumBadge,
+        premiumTag
+      ))}
+
+      ${tabPanel('audit', () => renderAuditPanel(state))}
+
+      ${tabPanel('operations', () => renderOperationsPanel(state, getChannelOptions(), premiumBadge, premiumTag))}
+
+      ${tabPanel('community', () => renderCommunityPanel(state, getRoleOptions(), getChannelOptions()))}
+
+      ${canShowFounderTab(state) ? tabPanel('founder', () => renderFounderPanel()) : ''}
+
+      ${tabPanel('moderation', () => renderModerationPanel(
+        state,
+        getChannelOptions(),
+        getAutoRoleOptions(),
+        premiumBadge,
+        premiumTag
+      ))}
+    </div>
+  `;
+
+  applyDashboardSubtabs(main);
+  attachDashboardHandlers();
+  applyDeferredStyles(main);
+}
+
+async function refreshGuildState() {
+  if (!selectedGuildId) return;
+  const payload = await api(`/api/guilds/${selectedGuildId}/state`);
+  currentState = payload.state;
+  currentSiteAccess = currentState.siteAccess || currentSiteAccess;
+  canViewCreatorOverview = Boolean(canViewCreatorOverview || currentState.creator?.canViewCreatorOverview || currentState.creator?.canViewPremiumOverview);
+  dashboardHydrating = false;
+  rememberCurrentGuildPreview();
+  renderDashboard();
+}
+
+async function loadCreatorOverview(button = null, { silent = false } = {}) {
+  if (!canViewCreatorOverview) return;
+
+  setLoading(button, true);
+  creatorOverviewLoading = true;
+  renderDashboard();
+
+  try {
+    const payload = await api('/api/creator/overview');
+    creatorOverview = payload.overview || null;
+    currentSiteAccess = creatorOverview?.access || currentSiteAccess;
+    canViewCreatorOverview = Boolean(creatorOverview?.canView);
+
+    if (!silent) {
+      toast('Régie actualisée.');
+    }
+  } catch (error) {
+    if (error.status === 403) {
+      canViewCreatorOverview = false;
+      creatorOverview = null;
+      currentSiteAccess = { role: 'user', isFounder: false, isStaff: false, canViewSitePanel: false, canManageSystem: false, canManageSiteStaff: false };
+    }
+
+    if (!silent) {
+      toast(dashboardErrorMessage(error), 'error');
+    }
+  } finally {
+    creatorOverviewLoading = false;
+    setLoading(button, false);
+    renderDashboard();
+  }
+}
+
+async function manageCreatorSiteStaffAccess(data, button = null) {
+  if (!currentSiteAccess?.canManageSiteStaff) return;
+
+  setLoading(button, true);
+
+  try {
+    const payload = await api('/api/creator/site-staff', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, mfaCode: founderMfaCode })
+    });
+
+    creatorOverview = payload.overview || creatorOverview;
+    founderMfaCode = '';
+    currentSiteAccess = creatorOverview?.access || currentSiteAccess;
+    canViewCreatorOverview = Boolean(creatorOverview?.canView);
+    renderDashboard();
+    toast(payload.message || 'Accès staff site mis à jour.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function manageCreatorMaintenance(data, button = null) {
+  if (!currentSiteAccess?.isFounder) return;
+
+  setLoading(button, true);
+
+  try {
+    const payload = await api('/api/creator/maintenance', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, mfaCode: founderMfaCode })
+    });
+    creatorOverview = payload.overview || creatorOverview;
+    founderMfaCode = '';
+    currentSiteAccess = creatorOverview?.access || currentSiteAccess;
+    renderDashboard();
+    toast(payload.message || 'Centre de maintenance actualisé.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function manageFounderMfa(data, button = null) {
+  setLoading(button, true);
+  try {
+    const payload = await api('/api/creator/mfa', { method: 'POST', body: JSON.stringify(data) });
+    if (data.action === 'setup') founderMfaSetup = payload.result;
+    if (data.action === 'enable' || data.action === 'disable') founderMfaSetup = null;
+    if (creatorOverview) creatorOverview.founderMfa = payload.status;
+    if (data.action === 'enable') founderMfaCode = '';
+    if (data.action === 'disable') founderMfaCode = '';
+    renderDashboard();
+    toast(data.action === 'enable' ? 'Double sécurité activée.' : (data.action === 'disable' ? 'Double sécurité désactivée.' : 'Configuration préparée.'));
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function manageCriticalAction(data, button = null) {
+  setLoading(button, true);
+  try {
+    const payload = await api('/api/creator/critical-action', { method: 'POST', body: JSON.stringify(data) });
+    creatorOverview = payload.overview || creatorOverview;
+    founderMfaCode = '';
+    renderDashboard();
+    toast(payload.message || 'Décision enregistrée.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function resolveRuntimeIncident(incidentId, resolutionNote = '', button = null) {
+  setLoading(button, true);
+  try {
+    const payload = await api('/api/creator/incidents', {
+      method: 'POST',
+      body: JSON.stringify({ incidentId, resolutionNote })
+    });
+    creatorOverview = payload.overview || creatorOverview;
+    renderDashboard();
+    toast(payload.message || 'Incident classé comme résolu.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function updateFeatureFlag(data, button = null) {
+  setLoading(button, true);
+  try {
+    data.mfaCode = founderMfaCode;
+    const payload = await api('/api/creator/feature-flags', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    founderMfaCode = '';
+    creatorOverview = payload.overview || creatorOverview;
+    renderDashboard();
+    toast(payload.message || 'Interrupteur Noctigarde mis à jour.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function submitOfficialUpdate(data, button = null) {
+  setLoading(button, true);
+  try {
+    const payload = await api('/api/creator/official-update', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, includeSubscribers: Boolean(data.includeSubscribers), mfaCode: founderMfaCode })
+    });
+    creatorOverview = payload.overview || creatorOverview;
+    founderMfaCode = '';
+    renderDashboard();
+    toast(payload.message || 'Annonce soumise à validation.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function downloadMaintenanceFile(kind, fileName, button = null) {
+  if (!currentSiteAccess?.isFounder || !['backup', 'archive'].includes(kind) || !fileName) return;
+  setLoading(button, true);
+  const url = new URL('/api/creator/maintenance/download', window.location.origin);
+  url.searchParams.set('kind', kind);
+  url.searchParams.set('file', fileName);
+
+  try {
+    const response = await fetch(url, { credentials: 'include', headers: { Accept: 'application/gzip, application/json' } });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+
+      if (payload.code === 'REAUTH_REQUIRED' && payload.reauthUrl) {
+        window.location.assign(payload.reauthUrl);
+        return;
+      }
+
+      throw new Error(payload.error || `Erreur ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    toast('Archive téléchargée.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function downloadReportFile(kind, format, button = null) {
+  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation'].includes(kind) || !['pdf', 'xlsx'].includes(format)) return;
+  setLoading(button, true);
+  const url = new URL(`/api/guilds/${encodeURIComponent(selectedGuildId)}/reports/${encodeURIComponent(kind)}`, window.location.origin);
+  url.searchParams.set('format', format);
+
+  try {
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: { Accept: format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/json' : 'application/pdf, application/json' }
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `Erreur ${response.status}`);
+    }
+
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const quotedName = disposition.match(/filename="([^"]+)"/i)?.[1];
+    const fileName = encodedName
+      ? decodeURIComponent(encodedName)
+      : (quotedName || `noctigarde-${kind}-${new Date().toISOString().slice(0, 10)}.${format}`);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    toast(format === 'xlsx' ? 'Classeur XLSX téléchargé.' : 'Rapport PDF téléchargé.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+function copyTextForSpreadsheet(text) {
+  const fallbackCopy = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) throw new Error('Copie impossible dans ce navigateur.');
+  };
+
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy());
+  }
+
+  fallbackCopy();
+  return Promise.resolve();
+}
+
+function spreadsheetClipboardHtml(kind, text) {
+  const rows = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((row, index, list) => row.length || index < list.length - 1)
+    .map((row) => row.split('\t'));
+  const columns = rows[0] || ['Données'];
+  const dataRows = rows.slice(1);
+  const columnCount = Math.max(columns.length, 1);
+  const reportTitle = {
+    service: 'Registre des services',
+    payroll: 'Registre des salaires',
+    dossiers: 'Suivi des tickets',
+    moderation: 'Registre de modération'
+  }[kind] || 'Rapport Noctigarde';
+  const guildName = currentState?.guild?.name || selectedGuildPreview?.name || 'Serveur Discord';
+  const generatedAt = new Intl.DateTimeFormat('fr-FR', {
+    dateStyle: 'long',
+    timeStyle: 'short'
+  }).format(new Date());
+  const titleCells = Array.from({ length: columnCount }, (_, index) => (
+    `<td style="padding:12px 10px;background:#102d3a;color:#ffffff;font-family:Arial,sans-serif;font-size:${index === 0 ? '16' : '11'}px;font-weight:700;border:1px solid #102d3a;">${index === 0 ? escapeHtml(reportTitle) : ''}</td>`
+  )).join('');
+  const subtitleCells = Array.from({ length: columnCount }, (_, index) => (
+    `<td style="padding:7px 10px;background:#dff4f3;color:#31505d;font-family:Arial,sans-serif;font-size:10px;border:1px solid #c8d9df;">${index === 0 ? `${escapeHtml(guildName)} · Généré le ${escapeHtml(generatedAt)}` : ''}</td>`
+  )).join('');
+  const headerCells = columns.map((column) => (
+    `<th style="padding:9px 10px;background:#176174;color:#ffffff;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-align:left;border:1px solid #0f4b5a;white-space:nowrap;">${escapeHtml(column)}</th>`
+  )).join('');
+  const bodyRows = dataRows.map((row, rowIndex) => {
+    const background = rowIndex % 2 ? '#edf5f6' : '#ffffff';
+    const cells = columns.map((column, columnIndex) => {
+      const rawValue = String(row[columnIndex] ?? '');
+      const preserveAsText = /(^|\s)id(\s|$)/i.test(column) || /^\d{15,20}$/.test(rawValue);
+      const value = preserveAsText && !rawValue.startsWith("'") ? `'${rawValue}` : rawValue;
+      return `<td style="padding:8px 10px;background:${background};color:#17242d;font-family:Arial,sans-serif;font-size:10px;border:1px solid #c8d9df;vertical-align:top;white-space:nowrap;mso-number-format:'\\@';">${escapeHtml(value)}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  return `<!doctype html><html><body><table style="border-collapse:collapse;border-spacing:0;">`
+    + `<tr>${titleCells}</tr><tr>${subtitleCells}</tr><tr>${headerCells}</tr>${bodyRows}`
+    + '</table></body></html>';
+}
+
+async function copyReportForSpreadsheet(kind, text) {
+  if (navigator.clipboard?.write && window.ClipboardItem && window.isSecureContext) {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+        'text/html': new Blob([spreadsheetClipboardHtml(kind, text)], { type: 'text/html' })
+      });
+      await navigator.clipboard.write([item]);
+      return true;
+    } catch (error) {
+      // Some browsers only allow plain-text clipboard writes.
+    }
+  }
+
+  await copyTextForSpreadsheet(text);
+  return false;
+}
+
+function showGoogleSheetsReadyDialog(richFormatting = false) {
+  let dialog = document.querySelector('[data-sheets-ready-dialog]');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.className = 'sheets-ready-dialog';
+    dialog.dataset.sheetsReadyDialog = '';
+    dialog.innerHTML = `
+      <div class="sheets-ready-content">
+        <header class="sheets-ready-heading">
+          <div>
+            <p class="eyebrow">Export Google Sheets</p>
+            <h3>Le tableau est prêt</h3>
+          </div>
+          <span class="sheets-copy-status" data-sheets-copy-status>Copié</span>
+        </header>
+        <p class="sheets-ready-intro" data-sheets-ready-intro>Les données sont dans ton presse-papiers. Il reste trois gestes rapides.</p>
+        <ol class="sheets-ready-steps">
+          <li><span>1</span><div><strong>Ouvre une feuille</strong><small>Utilise le bouton ci-dessous.</small></div></li>
+          <li><span>2</span><div><strong>Sélectionne A1</strong><small>C’est la première cellule en haut à gauche.</small></div></li>
+          <li><span>3</span><div><strong>Fais Ctrl+V</strong><small data-sheets-paste-result>Le tableau et ses colonnes apparaîtront.</small></div></li>
+        </ol>
+        <div class="sheets-ready-actions">
+          <button class="button button-ghost" type="button" data-close-sheets-dialog>Fermer</button>
+          <a class="button" href="https://sheets.new" target="_blank" rel="noopener noreferrer" data-open-sheets autofocus>Ouvrir Google Sheets</a>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.querySelector('[data-close-sheets-dialog]')?.addEventListener('click', () => dialog.close());
+    dialog.querySelector('[data-open-sheets]')?.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dialog.close();
+    });
+  }
+
+  const status = dialog.querySelector('[data-sheets-copy-status]');
+  const intro = dialog.querySelector('[data-sheets-ready-intro]');
+  const pasteResult = dialog.querySelector('[data-sheets-paste-result]');
+  if (status) status.textContent = richFormatting ? 'Style inclus' : 'Copié';
+  if (intro) {
+    intro.textContent = richFormatting
+      ? 'Le tableau Noctigarde et sa mise en forme sont dans ton presse-papiers.'
+      : 'Les données sont dans ton presse-papiers. Il reste trois gestes rapides.';
+  }
+  if (pasteResult) {
+    pasteResult.textContent = richFormatting
+      ? 'Le tableau mis en forme apparaîtra automatiquement.'
+      : 'Le tableau et ses colonnes apparaîtront.';
+  }
+
+  if (!dialog.open) dialog.showModal();
+}
+
+async function prepareReportForGoogleSheets(kind, button = null) {
+  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation'].includes(kind)) return;
+  setLoading(button, true);
+
+  try {
+    const url = new URL(`/api/guilds/${encodeURIComponent(selectedGuildId)}/reports/${encodeURIComponent(kind)}`, window.location.origin);
+    url.searchParams.set('format', 'tsv');
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: { Accept: 'text/tab-separated-values, application/json' }
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `Erreur ${response.status}`);
+    }
+    const richFormatting = await copyReportForSpreadsheet(kind, await response.text());
+    showGoogleSheetsReadyDialog(richFormatting);
+    toast(richFormatting ? 'Tableau mis en forme et prêt pour Google Sheets.' : 'Tableau copié et prêt pour Google Sheets.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function runAction(action, data, button = null) {
+  if (!selectedGuildId) return;
+  setLoading(button, true);
+
+  try {
+    const previousArchives = currentState?.payrollArchives || null;
+    const payload = await api(`/api/guilds/${selectedGuildId}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action, ...data })
+    });
+    currentState = payload.state;
+
+    if (previousArchives?.items?.length && currentState?.payrollArchives) {
+      const merged = new Map(previousArchives.items.map((archive) => [archive.weekStart, archive]));
+
+      for (const archive of currentState.payrollArchives.items || []) {
+        merged.set(archive.weekStart, archive);
+      }
+
+      if (payload.payrollArchive?.weekStart) {
+        merged.set(payload.payrollArchive.weekStart, payload.payrollArchive);
+      }
+
+      const items = Array.from(merged.values()).sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+      const totalCount = currentState.payrollArchives.totalCount || previousArchives.totalCount || items.length;
+      currentState.payrollArchives = {
+        ...currentState.payrollArchives,
+        offset: 0,
+        totalCount,
+        hasMore: totalCount > items.length,
+        items
+      };
+    }
+
+    dashboardHydrating = false;
+    rememberCurrentGuildPreview();
+    renderDashboard();
+    renderGuilds();
+    toast(payload.message || 'Action terminée.');
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function loadMorePayrollArchives(button = null) {
+  if (!selectedGuildId || !currentState?.payrollArchives?.hasMore) return;
+  setLoading(button, true);
+
+  try {
+    const currentItems = currentState.payrollArchives.items || [];
+    const params = new URLSearchParams({
+      limit: '24',
+      offset: String(currentItems.length)
+    });
+    const payload = await api(`/api/guilds/${selectedGuildId}/payroll-archives?${params}`);
+    const next = payload.payrollArchives || { items: [], hasMore: false };
+    const merged = new Map(currentItems.map((archive) => [archive.weekStart, archive]));
+
+    for (const archive of next.items || []) {
+      merged.set(archive.weekStart, archive);
+    }
+
+    currentState.payrollArchives = {
+      ...next,
+      offset: 0,
+      items: Array.from(merged.values()).sort((a, b) => b.weekStart.localeCompare(a.weekStart))
+    };
+    rememberCurrentGuildPreview();
+    renderDashboard();
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function loadAuditLogs(filters = auditFilters, scope = auditScope, button = null) {
+  if (!currentState) return;
+
+  setLoading(button, true);
+
+  try {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(filters || {})) {
+      if (value !== undefined && value !== null && String(value).trim()) {
+        params.set(key, String(value).trim());
+      }
+    }
+
+    const endpoint = scope === 'global' && currentState.auditLogs?.canViewGlobal
+      ? `/api/audit/global?${params}`
+      : `/api/guilds/${selectedGuildId}/audit?${params}`;
+    const payload = await api(endpoint);
+    auditScope = scope === 'global' && payload.auditLogs?.canViewGlobal ? 'global' : 'server';
+    auditFilters = { ...filters };
+    currentState.auditLogs = payload.auditLogs;
+    rememberCurrentGuildPreview();
+    renderDashboard();
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function loadModerationCases(filters = moderationFilters, button = null) {
+  if (!selectedGuildId || !currentState) return;
+
+  setLoading(button, true);
+
+  try {
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(filters || {})) {
+      if (value !== undefined && value !== null && String(value).trim()) {
+        params.set(key, String(value).trim());
+      }
+    }
+
+    const payload = await api(`/api/guilds/${selectedGuildId}/moderation-cases?${params}`);
+    moderationFilters = { ...filters };
+    expandedModerationCaseId = null;
+    currentState.moderationCases = payload.moderationCases;
+    rememberCurrentGuildPreview();
+    renderDashboard();
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+async function loadDossierArchiveSearch(filters, button = null) {
+  const query = String(filters.query || '').trim();
+  dossierFilters = { ...filters };
+  dossierArchiveMatches = [];
+
+  if (currentState?.dossiers?.items && dossierArchiveItemIds.length) {
+    const addedIds = new Set(dossierArchiveItemIds.map(String));
+    currentState.dossiers.items = currentState.dossiers.items.filter(item => !addedIds.has(String(item.id)));
+  }
+  dossierArchiveItemIds = [];
+
+  if (currentState?.advanced && query.length >= 3) {
+    setLoading(button, true);
+    try {
+      const payload = await api(`/api/guilds/${selectedGuildId}/dossiers/search?q=${encodeURIComponent(query)}`);
+      dossierArchiveMatches = payload.matches || [];
+      const existingIds = new Set((currentState.dossiers?.items || []).map(item => String(item.id)));
+      for (const item of payload.items || []) {
+        if (!existingIds.has(String(item.id))) {
+          currentState.dossiers.items.push(item);
+          dossierArchiveItemIds.push(item.id);
+          existingIds.add(String(item.id));
+        }
+      }
+    } catch (error) {
+      toast(dashboardErrorMessage(error), 'error');
+    } finally {
+      setLoading(button, false);
+    }
+  }
+
+  expandedDossierId = null;
+  renderDashboard();
+}
+
+async function loadUserProfile(userId, button = null) {
+  if (!selectedGuildId || !currentState) return;
+
+  setLoading(button, true);
+
+  try {
+    const payload = await api(`/api/guilds/${selectedGuildId}/users/${encodeURIComponent(userId)}`);
+    selectedUserProfile = payload.profile;
+    renderDashboard();
+  } catch (error) {
+    toast(dashboardErrorMessage(error), 'error');
+  } finally {
+    setLoading(button, false);
+  }
+}
+
+function attachDashboardHandlers() {
+  $$('[data-purge-form]').forEach((form) => {
+    const mode = form.elements.mode;
+    const countField = $('[data-purge-count-field]', form);
+    const allField = $('[data-purge-all-field]', form);
+    const countInput = form.elements.count;
+    const confirmationInput = form.elements.confirmation;
+    const updatePurgeMode = () => {
+      const deletesAll = mode?.value === 'all';
+      countField.hidden = deletesAll;
+      allField.hidden = !deletesAll;
+      countInput.disabled = deletesAll;
+      countInput.required = !deletesAll;
+      confirmationInput.disabled = !deletesAll;
+      confirmationInput.required = deletesAll;
+    };
+
+    mode?.addEventListener('change', updatePurgeMode);
+    updatePurgeMode();
+  });
+
+  $('[data-founder-mfa-code]')?.addEventListener('input', (event) => {
+    founderMfaCode = String(event.currentTarget.value || '').trim();
+  });
+
+  $('[data-founder-mfa-setup]')?.addEventListener('click', (event) => {
+    manageFounderMfa({ action: 'setup' }, event.currentTarget);
+  });
+
+  $$('[data-founder-mfa-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      manageFounderMfa(formData(form), $('button[type="submit"]', form));
+    });
+  });
+
+  $('[data-founder-official-update]')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    submitOfficialUpdate(formData(form), $('button[type="submit"]', form));
+  });
+
+  $('[data-founder-guild-search]')?.addEventListener('input', (event) => {
+    const query = String(event.currentTarget.value || '').trim().toLocaleLowerCase('fr');
+    const rows = $$('[data-founder-guild-row]');
+    let visibleCount = 0;
+
+    rows.forEach((row) => {
+      const visible = !query || String(row.dataset.founderGuildSearchValue || '').includes(query);
+      row.hidden = !visible;
+      if (visible) visibleCount += 1;
+    });
+
+    const empty = $('[data-founder-guild-empty]');
+    if (empty) empty.hidden = visibleCount > 0;
+  });
+
+  $$('[data-critical-action]').forEach((button) => {
+    button.addEventListener('click', () => manageCriticalAction({
+      action: button.dataset.criticalAction,
+      requestId: button.dataset.requestId
+    }, button));
+  });
+
+  $$('[data-resolve-incident]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const note = button.closest('.incident-row')?.querySelector('[data-incident-resolution-note]')?.value || '';
+      resolveRuntimeIncident(button.dataset.resolveIncident, note, button);
+    });
+  });
+
+  $$('[data-feature-flag-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = Object.fromEntries(new FormData(form).entries());
+      data.enabled = data.enabled === 'true';
+      updateFeatureFlag(data, form.querySelector('button[type="submit"]'));
+    });
+  });
+
+  $$('[data-guild-critical-action]').forEach((button) => {
+    button.addEventListener('click', () => runAction(button.dataset.guildCriticalAction, {
+      requestId: button.dataset.requestId
+    }, button));
+  });
+
+  $$('[data-dashboard-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextTab = button.dataset.dashboardTab;
+
+      if (!availableDashboardTabs().some((tab) => tab.id === nextTab)) {
+        return;
+      }
+
+      activeDashboardTab = nextTab;
+      renderDashboard();
+
+      if (nextTab === 'founder' && canViewCreatorOverview && !creatorOverview && !creatorOverviewLoading) {
+        loadCreatorOverview(null, { silent: true });
+      }
+    });
+  });
+
+  $$('[data-dashboard-subtab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const parent = button.dataset.dashboardSubtabParent;
+      if (parent !== activeDashboardTab) return;
+      activeDashboardSubtabs[parent] = button.dataset.dashboardSubtab;
+      applyDashboardSubtabs($('[data-dashboard-main]'));
+    });
+  });
+
+  $('[data-community-help-search]')?.addEventListener('input', (event) => {
+    const query = String(event.currentTarget.value || '').trim().toLocaleLowerCase('fr');
+    let visible = 0;
+    $$('[data-community-help-item]').forEach((item) => {
+      item.hidden = Boolean(query) && !String(item.dataset.search || '').includes(query);
+      if (!item.hidden) visible += 1;
+    });
+    const empty = $('[data-community-help-empty]');
+    if (empty) empty.hidden = visible > 0;
+  });
+
+  $$('.community-panel-editor').forEach((form) => {
+    const updatePanelPreview = () => {
+      const preview = form.querySelector('[data-panel-preview]');
+      const color = form.elements.color?.value || '#24D7D0';
+      form.querySelector('.panel-color-preview')?.style.setProperty('--panel-preview-color', color);
+      preview?.style.setProperty('--panel-preview-color', color);
+      const title = preview?.querySelector('[data-panel-preview-title]');
+      const description = preview?.querySelector('[data-panel-preview-description]');
+      if (title) title.textContent = form.elements.title?.value.trim() || (form.elements.panelType.value === 'service' ? 'Panneau de service' : 'Panneau des tickets');
+      if (description) description.textContent = form.elements.description?.value.trim() || 'Le texte du panneau apparaîtra ici.';
+      const image = preview?.querySelector('[data-panel-preview-image]');
+      if (image) {
+        const source = form.elements.imageUrl?.value.trim();
+        image.hidden = !source;
+        if (source) image.src = source;
+      }
+      const fieldNames = form.elements.panelType.value === 'service'
+        ? ['buttonStartLabel', 'buttonEndLabel', 'buttonHoursLabel', 'buttonActiveLabel']
+        : ['buttonSupportLabel', 'buttonReportLabel', 'buttonRecruitmentLabel', 'buttonPartnershipLabel', 'buttonOtherLabel'];
+      preview?.querySelectorAll('.discord-panel-preview-buttons span').forEach((button, index) => {
+        const field = form.elements[fieldNames[index]];
+        button.textContent = field?.value.trim() || field?.placeholder || 'Bouton';
+      });
+    };
+    form.addEventListener('input', updatePanelPreview);
+    updatePanelPreview();
+  });
+
+  $$('[data-refresh-creator-overview]').forEach((button) => {
+    button.addEventListener('click', () => {
+      loadCreatorOverview(button);
+    });
+  });
+
+  $$('[data-creator-staff-form]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const button = $('button[type="submit"]', form);
+      manageCreatorSiteStaffAccess(formData(form), button);
+    });
+  });
+
+  $$('[data-creator-staff-click]').forEach((button) => {
+    button.addEventListener('click', () => {
+      manageCreatorSiteStaffAccess({
+        action: button.dataset.action,
+        userId: button.dataset.userId || ''
+      }, button);
+    });
+  });
+
+  $$('[data-maintenance-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      manageCreatorMaintenance({
+        action: button.dataset.maintenanceAction,
+        fileName: button.dataset.file || ''
+      }, button);
+    });
+  });
+
+  $$('[data-maintenance-download]').forEach((button) => {
+    button.addEventListener('click', () => {
+      downloadMaintenanceFile(button.dataset.kind, button.dataset.file, button);
+    });
+  });
+
+  $('[data-maintenance-restore-form]')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = $('button[type="submit"]', form);
+    const data = formData(form);
+    manageCreatorMaintenance({ action: 'restore-backup', ...data }, button);
+  });
+
+  $$('[data-notification-key]').forEach((button) => {
+    button.addEventListener('click', () => runAction('notification-state', {
+      notificationKey: button.dataset.notificationKey,
+      notificationAction: button.dataset.notificationAction
+    }, button));
+  });
+
+  $$('[data-operation-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.operationAction;
+      runAction(action, {
+        announcementId: button.dataset.announcementId,
+        scheduleId: button.dataset.scheduleId
+      }, button);
+    });
+  });
+
+  $$('[data-report-download]').forEach((button) => {
+    button.addEventListener('click', () => {
+      downloadReportFile(button.dataset.reportDownload, button.dataset.reportFormat, button);
+    });
+  });
+
+  $$('[data-report-sheets]').forEach((button) => {
+    button.addEventListener('click', () => {
+      prepareReportForGoogleSheets(button.dataset.reportSheets, button);
+    });
+  });
+
+  $$('[data-scheduled-editor]').forEach((form) => {
+    const preview = form.parentElement?.querySelector('[data-scheduled-preview]');
+    const updatePreview = () => {
+      if (!preview) return;
+      const title = form.elements.title?.value.trim() || 'Titre de l’annonce';
+      const description = form.elements.description?.value.trim() || 'Le message apparaîtra ici sans être envoyé.';
+      const color = form.elements.color?.value || '#2dd4bf';
+      preview.style.setProperty('--announcement-color', color);
+      preview.querySelector('strong').textContent = title;
+      preview.querySelector('p').textContent = description;
+    };
+    form.addEventListener('input', updatePreview);
+    updatePreview();
+  });
+
+  $$('[data-file-upload]').forEach((input) => {
+    updateFileUploadName(input);
+    input.addEventListener('change', () => updateFileUploadName(input));
+  });
+
+  $$('[data-action-form]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const action = form.dataset.actionForm;
+      const button = $('button[type="submit"]', form);
+
+      if (form.dataset.payrollArchiveWeek) {
+        expandedPayrollArchiveWeek = form.dataset.payrollArchiveWeek;
+      }
+
+      try {
+        runAction(action, await actionFormData(form, action), button);
+      } catch (error) {
+        toast(error.message || 'Image impossible à préparer.', 'error');
+      }
+    });
+  });
+
+  $$('[data-payroll-history-filter]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = formData(form);
+      payrollHistoryFilters = {
+        query: String(data.query || '').trim().slice(0, 120),
+        status: ['open', 'settled'].includes(data.status) ? data.status : 'all'
+      };
+      expandedPayrollArchiveWeek = null;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-payroll-history-reset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      payrollHistoryFilters = { query: '', status: 'all' };
+      expandedPayrollArchiveWeek = null;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-payroll-history-more]').forEach((button) => {
+    button.addEventListener('click', () => loadMorePayrollArchives(button));
+  });
+
+  $$('[data-payroll-history-period]').forEach((details) => {
+    details.addEventListener('toggle', () => {
+      const weekStart = details.dataset.payrollHistoryPeriod || null;
+
+      if (details.open && expandedPayrollArchiveWeek !== weekStart) {
+        expandedPayrollArchiveWeek = weekStart;
+        renderDashboard();
+      } else if (!details.open && expandedPayrollArchiveWeek === weekStart) {
+        expandedPayrollArchiveWeek = null;
+      }
+    });
+  });
+
+  $$('[data-action-click]').forEach((button) => {
+    button.addEventListener('click', () => {
+      runAction(button.dataset.actionClick, { roleId: button.dataset.roleId }, button);
+    });
+  });
+
+  $$('[data-audit-filter]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const button = $('button[type="submit"]', form);
+      loadAuditLogs(formData(form), auditScope, button);
+    });
+  });
+
+  $$('[data-audit-reset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      auditFilters = {};
+      auditScope = 'server';
+      loadAuditLogs({}, 'server', button);
+    });
+  });
+
+  $$('[data-audit-scope]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextScope = button.dataset.auditScope === 'global' ? 'global' : 'server';
+      loadAuditLogs(auditFilters, nextScope, button);
+    });
+  });
+
+  $$('[data-moderation-filter]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const button = $('button[type="submit"]', form);
+      loadModerationCases(formData(form), button);
+    });
+  });
+
+  $$('[data-moderation-reset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      moderationFilters = {};
+      loadModerationCases({}, button);
+    });
+  });
+
+  $$('[data-dossier-filter]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await loadDossierArchiveSearch(formData(form), $('button[type="submit"]', form));
+    });
+  });
+
+  $$('[data-dossier-reset]').forEach((button) => {
+    button.addEventListener('click', () => {
+      dossierFilters = {};
+      dossierArchiveMatches = [];
+      if (currentState?.dossiers?.items && dossierArchiveItemIds.length) {
+        const addedIds = new Set(dossierArchiveItemIds.map(String));
+        currentState.dossiers.items = currentState.dossiers.items.filter(item => !addedIds.has(String(item.id)));
+      }
+      dossierArchiveItemIds = [];
+      expandedDossierId = null;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-dossier-view]').forEach((button) => {
+    button.addEventListener('click', () => {
+      dossierViewMode = button.dataset.dossierView === 'table' ? 'table' : 'board';
+      expandedDossierId = null;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-dossier-detail]').forEach((button) => {
+    button.addEventListener('click', () => {
+      expandedDossierId = String(expandedDossierId) === String(button.dataset.dossierDetail)
+        ? null
+        : button.dataset.dossierDetail;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-case-detail]').forEach((button) => {
+    button.addEventListener('click', () => {
+      expandedModerationCaseId = String(expandedModerationCaseId) === String(button.dataset.caseDetail)
+        ? null
+        : button.dataset.caseDetail;
+      renderDashboard();
+    });
+  });
+
+  $$('[data-user-lookup]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const button = $('button[type="submit"]', form);
+      const data = formData(form);
+      loadUserProfile(data.userId, button);
+    });
+  });
+}
+
+async function loadGuilds() {
+  const payload = await api('/api/guilds');
+  guilds = payload.guilds;
+  selectedGuildPreview = guilds.find((guild) => guild.id === selectedGuildId) || selectedGuildPreview;
+  renderGuilds();
+}
+
+async function selectGuild(guildId, { restored = false } = {}) {
+  const guild = guilds.find((item) => item.id === guildId);
+
+  if (!guild || !guild.installed) {
+    if (restored) {
+      forgetLastGuildId(guildId);
+    }
+
+    removeCachedGuildPreview(currentUser?.id, guildId);
+    selectedGuildId = null;
+    currentState = null;
+    selectedGuildPreview = null;
+    dashboardHydrating = false;
+    renderGuilds();
+    renderDashboard();
+
+    if (!restored) {
+      toast(dashboardErrorMessage('Noctigarde is not installed on this server.'), 'error');
+    }
+    return false;
+  }
+
+  selectedGuildId = guildId;
+  auditScope = 'server';
+  auditFilters = {};
+  moderationFilters = {};
+  expandedModerationCaseId = null;
+  payrollHistoryFilters = { query: '', status: 'all' };
+  expandedPayrollArchiveWeek = null;
+  selectedUserProfile = null;
+  dossierFilters = {};
+  dossierArchiveMatches = [];
+  dossierArchiveItemIds = [];
+  expandedDossierId = null;
+  dashboardHydrating = true;
+  selectedGuildPreview = guild || readCachedGuildPreview(currentUser?.id, guildId);
+  currentState = null;
+  renderGuilds();
+  renderDashboard();
+
+  try {
+    await refreshGuildState();
+    storeLastGuildId(guildId);
+    return true;
+  } catch (error) {
+    if (restored) {
+      forgetLastGuildId(guildId);
+      removeCachedGuildPreview(currentUser?.id, guildId);
+      selectedGuildId = null;
+      currentState = null;
+      selectedGuildPreview = null;
+      dashboardHydrating = false;
+      renderGuilds();
+      renderDashboard();
+      return false;
+    }
+
+    dashboardHydrating = false;
+
+    if (error.payload?.inviteUrl) {
+      const inviteUrl = safeExternalUrl(error.payload.inviteUrl, ['discord.com']);
+      toast('Noctigarde doit être autorisé sur ce serveur.', 'error');
+      if (inviteUrl) {
+        window.open(inviteUrl, '_blank', 'noopener');
+      }
+      renderDashboard();
+      return false;
+    }
+    toast(error.message, 'error');
+    renderDashboard();
+    return false;
+  }
+}
+
+async function bootstrap() {
+  if (publicDashboardHost) {
+    showPublicDashboardGuide();
+    return;
+  }
+
+  $('[data-live-dashboard]')?.removeAttribute('hidden');
+  $('[data-public-dashboard]')?.setAttribute('hidden', '');
+  $('[data-login]')?.removeAttribute('hidden');
+  $('[data-public-invite]')?.setAttribute('hidden', '');
+  showCachedDashboardPreview();
+
+  try {
+    const [session, guildPayload] = await Promise.all([
+      api('/api/session'),
+      api('/api/guilds')
+    ]);
+    currentUser = session.user;
+    csrfToken = session.csrfToken || csrfToken;
+    currentSettings = session.settings || null;
+    currentSiteAccess = session.siteAccess || currentSiteAccess;
+    canViewCreatorOverview = Boolean(session.creator?.canViewCreatorOverview || session.creator?.canViewPremiumOverview);
+    guilds = guildPayload.guilds || [];
+    selectedGuildPreview = guilds.find((guild) => guild.id === selectedGuildId) || selectedGuildPreview;
+    renderUser();
+    renderGuilds();
+
+    let restoredGuild = false;
+
+    for (const guildId of getRestorableGuildIds()) {
+      restoredGuild = await selectGuild(guildId, { restored: true });
+
+      if (restoredGuild) {
+        break;
+      }
+    }
+
+    if (!restoredGuild) {
+      selectedGuildId = null;
+      currentState = null;
+      dashboardHydrating = false;
+      renderDashboard();
+    }
+
+  } catch (error) {
+    currentUser = null;
+    csrfToken = null;
+    guilds = [];
+    currentSettings = null;
+    selectedGuildId = null;
+    currentState = null;
+    selectedUserProfile = null;
+    selectedGuildPreview = null;
+    creatorOverview = null;
+    creatorOverviewLoading = false;
+    canViewCreatorOverview = false;
+    currentSiteAccess = { role: 'user', isFounder: false, isStaff: false, canViewSitePanel: false, canManageSystem: false, canManageSiteStaff: false };
+    dashboardHydrating = false;
+    renderUser();
+    renderGuilds();
+    showPublicDashboardGuide();
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const helpButton = event.target.closest('.field-help');
+
+  if (helpButton) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (tooltipHost === helpButton && tooltipPinned) {
+      hideTooltip({ force: true });
+      return;
+    }
+
+    showTooltip(helpButton, { pinned: true });
+    return;
+  }
+
+  hideTooltip({ force: true });
+
+  if (event.target.closest('[data-open-guild-drawer]')) {
+    const drawer = $('[data-guild-drawer]');
+    setGuildDrawerOpen(!drawer?.classList.contains('is-open'));
+    return;
+  }
+
+  if (event.target.closest('[data-close-guild-drawer]')) {
+    setGuildDrawerOpen(false);
+    return;
+  }
+
+  const guildButton = event.target.closest('[data-select-guild]');
+  if (guildButton) {
+    setGuildDrawerOpen(false);
+    selectGuild(guildButton.dataset.selectGuild);
+  }
+});
+
+document.addEventListener('mouseover', (event) => {
+  const helpButton = event.target.closest('.field-help');
+
+  if (helpButton) {
+    showTooltip(helpButton);
+  }
+});
+
+document.addEventListener('mouseout', (event) => {
+  const helpButton = event.target.closest('.field-help');
+
+  if (helpButton && !helpButton.contains(event.relatedTarget)) {
+    hideTooltip();
+  }
+});
+
+document.addEventListener('focusin', (event) => {
+  const helpButton = event.target.closest('.field-help');
+
+  if (helpButton) {
+    showTooltip(helpButton);
+  }
+});
+
+document.addEventListener('focusout', (event) => {
+  const helpButton = event.target.closest('.field-help');
+
+  if (helpButton) {
+    hideTooltip();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    hideTooltip({ force: true });
+    setGuildDrawerOpen(false);
+  }
+});
+
+window.addEventListener('resize', () => {
+  if (tooltipHost) {
+    positionTooltip(tooltipHost);
+  }
+});
+
+document.addEventListener('scroll', () => {
+  if (tooltipHost) {
+    positionTooltip(tooltipHost);
+  }
+}, true);
+
+$('[data-logout]')?.addEventListener('click', async () => {
+  const guildKeysToClear = lastGuildStorageKeys();
+  const cachedUserId = currentUser?.id;
+  const cachedGuildId = selectedGuildId || readStoredLastGuildId();
+
+  await api('/api/logout', { method: 'POST', body: '{}' }).catch(() => {});
+  currentUser = null;
+  guilds = [];
+  selectedGuildId = null;
+  currentState = null;
+  currentSettings = null;
+  selectedGuildPreview = null;
+  creatorOverview = null;
+  creatorOverviewLoading = false;
+  canViewCreatorOverview = false;
+  currentSiteAccess = { role: 'user', isFounder: false, isStaff: false, canViewSitePanel: false, canManageSystem: false, canManageSiteStaff: false };
+  csrfToken = null;
+  dashboardHydrating = false;
+  dossierFilters = {};
+  dossierArchiveMatches = [];
+  dossierArchiveItemIds = [];
+  expandedDossierId = null;
+  localStorage.removeItem('sentinel-discord-profile');
+  removeCachedGuildPreview(cachedUserId, cachedGuildId);
+  try {
+    guildKeysToClear.forEach((key) => localStorage.removeItem(key));
+  } catch (error) {
+    // Storage can be blocked by browser settings.
+  }
+  renderUser();
+  renderGuilds();
+  renderDashboard();
+});
+
+bootstrap();
