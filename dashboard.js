@@ -5418,6 +5418,48 @@ function founderColdArchiveHistory(storage, canManage) {
   `;
 }
 
+function founderPerformanceAlert(alert) {
+  const details = alert?.details || {};
+
+  if (alert?.key !== 'performance_degraded') {
+    return `<p><strong>Seuil ${escapeHtml(alert.level)} :</strong> ${escapeHtml(alert.message)}</p>`;
+  }
+
+  const action = details.dashboardAction || details.discordAction || null;
+  const lastSlowAt = details.dashboardLastSlowAt || details.discordLastSlowAt || details.evaluatedAt || alert.lastSeenAt;
+  return `
+    <div class="maintenance-alert-detail">
+      <p><strong>Seuil ${escapeHtml(alert.level)} :</strong> ${escapeHtml(alert.message)}</p>
+      <small>Site : ${escapeHtml(details.dashboardSampleCount || 0)} relevé(s), p95 ${escapeHtml(details.dashboardP95Ms || 0)} ms · Discord : ${escapeHtml(details.discordSampleCount || 0)} relevé(s), p95 ${escapeHtml(details.discordP95Ms || 0)} ms.</small>
+      ${action ? `<small>Dernière action lente : <code>${escapeHtml(action)}</code>${lastSlowAt ? ` · ${escapeHtml(formatAuditDate(lastSlowAt))}` : ''}</small>` : ''}
+    </div>
+  `;
+}
+
+function founderPerformanceHistory(history) {
+  const windows = history?.windows || {};
+  const entries = [
+    ['24 heures', windows.day],
+    ['7 jours', windows.week],
+    ['30 jours', windows.month]
+  ];
+
+  return `
+    <section class="maintenance-section maintenance-performance-history">
+      <div class="panel-heading row-heading"><div><h4>Historique des performances</h4><p class="muted">Un relevé toutes les ${escapeHtml(history?.intervalMinutes || 15)} minutes, conservé ${escapeHtml(history?.retentionDays || 30)} jours.</p></div></div>
+      <div class="storage-distribution">
+        ${entries.map(([label, item]) => `
+          <div class="performance-window-row">
+            <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(item?.snapshotCount || 0)} relevé(s)${item?.latestAt ? ` · dernier ${escapeHtml(formatAuditDate(item.latestAt))}` : ''}</small></span>
+            <span><strong>Site ${escapeHtml(item?.dashboard?.latestP95Ms || 0)} ms</strong><small>p95 moyen ${escapeHtml(item?.dashboard?.averageP95Ms || 0)} ms · pic ${escapeHtml(item?.dashboard?.peakP95Ms || 0)} ms · ${escapeHtml(item?.dashboard?.latestSamples || 0)} échantillon(s)</small></span>
+            <span><strong>Discord ${escapeHtml(item?.discord?.latestP95Ms || 0)} ms</strong><small>p95 moyen ${escapeHtml(item?.discord?.averageP95Ms || 0)} ms · pic ${escapeHtml(item?.discord?.peakP95Ms || 0)} ms · ${escapeHtml(item?.discord?.latestSamples || 0)} échantillon(s)</small></span>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+  `;
+}
+
 function founderStoragePanel(overview) {
   const storage = overview?.storage;
 
@@ -5454,7 +5496,7 @@ function founderStoragePanel(overview) {
         </div>
         ${statusBadge(alerts.length ? `${alerts.length} alerte(s)` : (allCompressed ? 'Sous contrôle' : 'Entretien en cours'), !alerts.length)}
       </div>
-      ${alerts.length ? `<div class="maintenance-alerts">${alerts.map(alert => `<p><strong>Seuil ${escapeHtml(alert.level)} :</strong> ${escapeHtml(alert.message)}</p>`).join('')}</div>` : ''}
+      ${alerts.length ? `<div class="maintenance-alerts">${alerts.map(founderPerformanceAlert).join('')}</div>` : ''}
       <div class="storage-capacity">
         <span><strong>Volume utilisé</strong><small>${escapeHtml(formatStorageBytes(volume.usedBytes))} / ${escapeHtml(formatStorageBytes(volume.totalBytes))}</small></span>
         <div class="storage-capacity-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeHtml(usagePercent)}"><span style="width:${escapeHtml(usagePercent)}%"></span></div>
@@ -5506,6 +5548,7 @@ function founderStoragePanel(overview) {
             <div><span>Copies compressées</span><strong>${escapeHtml(storage.compressedCount)} / ${escapeHtml(storage.count)}</strong></div>
           </div>
         </section>
+        ${founderPerformanceHistory(performance.history)}
       </div>
       ${canManage ? `
         <div class="maintenance-toolbar">
