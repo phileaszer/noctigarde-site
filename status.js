@@ -21,7 +21,10 @@
       statusReadFailed: 'Impossible de lire le statut en direct.',
       dashboardReadFailed: 'La page est ouverte, mais Noctigarde ne répond pas au contrôle de statut.',
       noIncidents: 'Aucun incident connu pour le moment.',
-      noMaintenance: 'Aucune maintenance annoncée actuellement.'
+      noMaintenance: 'Aucune maintenance annoncée actuellement.',
+      operational: 'Opérationnel',
+      degraded: 'À vérifier',
+      notConfigured: 'À configurer'
     },
     en: {
       unavailable: 'Unavailable',
@@ -35,7 +38,10 @@
       statusReadFailed: 'Unable to read the live status.',
       dashboardReadFailed: 'The page is open, but Noctigarde is not responding to the status check.',
       noIncidents: 'No known incident right now.',
-      noMaintenance: 'No maintenance announced right now.'
+      noMaintenance: 'No maintenance announced right now.',
+      operational: 'Operational',
+      degraded: 'Needs attention',
+      notConfigured: 'Not configured'
     }
   };
 
@@ -104,6 +110,19 @@
     setText('[data-status-guilds]', status.guildCount === null || status.guildCount === undefined ? t('unavailable') : String(status.guildCount));
     renderList('[data-status-incidents]', status.incidents, t('noIncidents'));
     renderList('[data-status-maintenance]', status.maintenance ? [status.maintenance] : [], t('noMaintenance'));
+    const componentLabels = currentLanguage() === 'en'
+      ? { dashboard: 'Dashboard', discord: 'Discord', sqlite: 'Database', oauth: 'Discord login', objectStorage: 'Main backup', secondaryBackup: 'Secondary backup', jobs: 'Automatic tasks' }
+      : { dashboard: 'Dashboard', discord: 'Discord', sqlite: 'Base de données', oauth: 'Connexion Discord', objectStorage: 'Sauvegarde principale', secondaryBackup: 'Sauvegarde secondaire', jobs: 'Tâches automatiques' };
+    const components = status.components?.components || {};
+    const host = document.querySelector('[data-status-components]');
+    if (host) {
+      host.innerHTML = Object.entries(components).map(([key, item]) => {
+        const state = item.state === 'operational'
+          ? t('operational')
+          : (item.state === 'not_configured' ? t('notConfigured') : t('degraded'));
+        return `<li><span>${escapeHtml(componentLabels[key] || key)}</span><strong>${escapeHtml(state)}</strong></li>`;
+      }).join('') || `<li><span>${escapeHtml(t('checking'))}</span></li>`;
+    }
   }
 
   async function loadStatus() {

@@ -39,6 +39,13 @@
 
     'Navigation principale': 'Main navigation',
     'Navigation dashboard': 'Dashboard navigation',
+    'Base de données': 'Database',
+    'contrôle actif': 'active check',
+    'service complémentaire': 'optional service',
+    'Tâches automatiques': 'Automatic tasks',
+    'État détaillé': 'Detailed status',
+    'Services techniques': 'Technical services',
+    'Vérification en cours': 'Check in progress',
     'Site public': 'Public site',
     'Fonctionnalites': 'Features',
     'Commandes': 'Commands',

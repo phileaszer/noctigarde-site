@@ -2857,6 +2857,18 @@ h3 {
   line-height: 1.55;
 }
 
+.status-component-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.status-component-list strong {
+  color: var(--accent);
+  text-align: right;
+}
+
 .steps {
   margin: 0;
   padding: 0;

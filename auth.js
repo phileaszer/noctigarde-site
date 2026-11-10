@@ -98,9 +98,10 @@
       const safeName = escapeHtml(displayName(user));
       link.href = `${backendOrigin()}/dashboard`;
       link.classList.add('discord-profile-button');
-      link.setAttribute('aria-label', `Profil Discord : ${displayName(user)}`);
+      link.removeAttribute('aria-label');
+      link.title = `Profil Discord : ${displayName(user)}`;
       link.innerHTML = `
-        ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : '<span class="discord-profile-fallback">D</span>'}
+        ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : '<span class="discord-profile-fallback" aria-hidden="true">D</span>'}
         <span>${safeName}</span>
       `;
 

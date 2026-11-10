@@ -9,6 +9,7 @@ const SHELL = [
   './styles.css',
   './theme.js',
   './i18n.js',
+  './dashboard-config.js',
   './auth.js',
   './assets/noctigarde-mark.png'
 ];
