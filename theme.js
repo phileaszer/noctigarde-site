@@ -79,8 +79,9 @@
       button.dataset.currentTheme = theme;
       button.classList.toggle('is-western', isWestern);
       button.setAttribute('aria-pressed', String(isWestern));
-      button.setAttribute('aria-label', isWestern ? text.currentWestern : text.currentNoctigarde);
-      button.title = isWestern ? text.currentWestern : text.currentNoctigarde;
+      const currentLabel = isWestern ? text.currentWestern : text.currentNoctigarde;
+      button.setAttribute('aria-label', `${button.textContent} - ${currentLabel}`);
+      button.title = currentLabel;
     });
   }
 

@@ -3124,6 +3124,7 @@
   function translateAttributes(language) {
     const attrs = ['placeholder', 'aria-label', 'alt', 'title', 'content', 'data-tooltip'];
     document.querySelectorAll('[placeholder], [aria-label], [alt], [title], meta[content], [data-tooltip]').forEach((element) => {
+      if (shouldSkip(element)) return;
       attrs.forEach((attr) => {
         if (!element.hasAttribute(attr)) return;
         const key = `i18nOriginal${attr.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())}`;
