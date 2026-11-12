@@ -6,6 +6,7 @@ let guilds = [];
 let selectedGuildId = null;
 let currentState = null;
 let currentSettings = null;
+let currentSecurity = { passkeys: [], sessions: [], passkeyVerified: false };
 let activeDashboardTab = 'overview';
 const activeDashboardSubtabs = {};
 let tooltipHost = null;
@@ -6031,6 +6032,14 @@ function renderDashboard() {
   applyDashboardSubtabs(main);
   attachDashboardHandlers();
   applyDeferredStyles(main);
+  window.NoctigardeDashboardBridge = {
+    request: api,
+    refresh: refreshGuildState,
+    guildId: selectedGuildId
+  };
+  document.dispatchEvent(new CustomEvent('noctigarde:dashboard-rendered', {
+    detail: { guildId: selectedGuildId, state: currentState, security: currentSecurity }
+  }));
 }
 
 async function refreshGuildState() {
@@ -7141,6 +7150,7 @@ async function bootstrap() {
     currentUser = session.user;
     csrfToken = session.csrfToken || csrfToken;
     currentSettings = session.settings || null;
+    currentSecurity = session.security || currentSecurity;
     currentSiteAccess = session.siteAccess || currentSiteAccess;
     canViewCreatorOverview = Boolean(session.creator?.canViewCreatorOverview || session.creator?.canViewPremiumOverview);
     guilds = guildPayload.guilds || [];
@@ -7170,6 +7180,7 @@ async function bootstrap() {
     csrfToken = null;
     guilds = [];
     currentSettings = null;
+    currentSecurity = { passkeys: [], sessions: [], passkeyVerified: false };
     selectedGuildId = null;
     currentState = null;
     selectedUserProfile = null;
