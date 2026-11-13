@@ -323,14 +323,19 @@ async function api(path, options = {}) {
     && !csrfRetried
     && !['GET', 'HEAD', 'OPTIONS'].includes(method)
   ) {
-    const sessionResponse = await fetch('/api/session', {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' }
-    });
-    const sessionPayload = await sessionResponse.json().catch(() => ({}));
-    if (sessionResponse.ok && sessionPayload.csrfToken) {
-      csrfToken = sessionPayload.csrfToken;
+    if (!csrfToken) {
+      const sessionResponse = await fetch('/api/session', {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' }
+      });
+      const sessionPayload = await sessionResponse.json().catch(() => ({}));
+      if (sessionResponse.ok && sessionPayload.csrfToken) {
+        csrfToken = sessionPayload.csrfToken;
+      }
+    }
+
+    if (csrfToken) {
       return api(path, { ...options, csrfRetried: true });
     }
   }
