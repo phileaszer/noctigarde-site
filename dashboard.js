@@ -283,6 +283,7 @@ async function api(path, options = {}) {
   const {
     timeoutMs: ignoredTimeout,
     signal: ignoredSignal,
+    csrfRetried = false,
     headers: optionHeaders,
     ...fetchOptions
   } = options;
@@ -314,6 +315,24 @@ async function api(path, options = {}) {
 
   if (payload.csrfToken) {
     csrfToken = payload.csrfToken;
+  }
+
+  if (
+    response.status === 403
+    && payload.code === 'CSRF_INVALID'
+    && !csrfRetried
+    && !['GET', 'HEAD', 'OPTIONS'].includes(method)
+  ) {
+    const sessionResponse = await fetch('/api/session', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' }
+    });
+    const sessionPayload = await sessionResponse.json().catch(() => ({}));
+    if (sessionResponse.ok && sessionPayload.csrfToken) {
+      csrfToken = sessionPayload.csrfToken;
+      return api(path, { ...options, csrfRetried: true });
+    }
   }
 
   if (!response.ok || payload.ok === false) {
@@ -6037,8 +6056,13 @@ function renderDashboard() {
     refresh: refreshGuildState,
     guildId: selectedGuildId
   };
+  window.NoctigardeDashboardContext = {
+    guildId: selectedGuildId,
+    state: currentState,
+    security: currentSecurity
+  };
   document.dispatchEvent(new CustomEvent('noctigarde:dashboard-rendered', {
-    detail: { guildId: selectedGuildId, state: currentState, security: currentSecurity }
+    detail: window.NoctigardeDashboardContext
   }));
 }
 

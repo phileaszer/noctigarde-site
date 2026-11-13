@@ -349,9 +349,12 @@
     });
   }
 
-  document.addEventListener('noctigarde:dashboard-rendered', event => {
-    context = event.detail;
-    security = event.detail.security || security;
+  function receiveDashboardContext(nextContext) {
+    context = nextContext;
+    security = nextContext?.security || security;
     renderTools();
-  });
+  }
+
+  document.addEventListener('noctigarde:dashboard-rendered', event => receiveDashboardContext(event.detail));
+  if (window.NoctigardeDashboardContext) receiveDashboardContext(window.NoctigardeDashboardContext);
 })();
