@@ -5725,13 +5725,22 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
         <button class="button button-small" type="submit">Mettre à jour</button>
       </form>
     </article>`).join('');
-  const shiftRows = planning.shifts.map((shift) => `
+  const planningNow = Date.now();
+  const upcomingShiftCount = planning.shifts.filter(shift => shift.status === 'scheduled' && new Date(shift.endsAt).getTime() >= planningNow).length;
+  const shiftRows = planning.shifts.map((shift) => {
+    const isPast = new Date(shift.endsAt).getTime() < planningNow;
+    const stateLabel = shift.status === 'cancelled' ? 'Annulé' : (isPast ? 'Terminé' : 'À venir');
+    return `
     <article class="community-record">
-      <header><div><span>Créneau #${escapeHtml(shift.id)}</span><strong>${escapeHtml(shift.title)}</strong></div>${statusBadge(`${shift.counts.available}/${shift.capacity || '∞'} présents`, true)}</header>
+      <header><div><span>Créneau #${escapeHtml(shift.id)}</span><strong>${escapeHtml(shift.title)}</strong></div>${statusBadge(stateLabel, !isPast && shift.status === 'scheduled')}</header>
       <p>${escapeHtml(formatAuditDate(shift.startsAt))} → ${escapeHtml(formatAuditDate(shift.endsAt))}</p>
       <div class="community-response-strip"><span>${escapeHtml(shift.counts.available)} disponibles</span><span>${escapeHtml(shift.counts.maybe)} incertains</span><span>${escapeHtml(shift.counts.unavailable)} indisponibles</span></div>
-      <form data-action-form="community-cancel-shift"><input type="hidden" name="shiftId" value="${escapeHtml(shift.id)}"><button class="button button-small button-ghost" type="submit">Annuler ce créneau</button></form>
-    </article>`).join('');
+      <div class="inline-action-row">
+        ${!isPast && shift.status === 'scheduled' ? `<form data-action-form="community-cancel-shift"><input type="hidden" name="shiftId" value="${escapeHtml(shift.id)}"><button class="button button-small button-ghost" type="submit">Annuler ce créneau</button></form>` : ''}
+        <form data-action-form="community-delete-shift" data-confirm-message="Supprimer définitivement ce créneau du planning ?"><input type="hidden" name="shiftId" value="${escapeHtml(shift.id)}"><button class="button button-small button-ghost" type="submit">Supprimer du planning</button></form>
+      </div>
+    </article>`;
+  }).join('');
   const suggestionRows = suggestions.map((item) => `
     <article class="community-record">
       <header><div><span>Suggestion #${escapeHtml(item.id)}</span><strong>${escapeHtml(item.title)}</strong></div>${statusBadge(`${item.score} point(s)`, item.score > 0)}</header>
@@ -5795,7 +5804,7 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
       <div class="community-record-list community-applications-list">${applicationRows || emptyPanel('Aucune candidature reçue.')}</div>
     </section>
     <section class="community-section community-planning">
-      <div class="community-section-heading"><div><span>Planning</span><h3>Créneaux et disponibilités</h3></div><strong>${escapeHtml(planning.shifts.length)} à venir</strong></div>
+      <div class="community-section-heading"><div><span>Planning</span><h3>Créneaux et disponibilités</h3></div><strong>${escapeHtml(upcomingShiftCount)} à venir · ${escapeHtml(planning.shifts.length)} conservé(s)</strong></div>
       <form data-action-form="community-create-shift" class="community-create-form community-shift-form">
         <label><span>Nom du créneau</span><input name="title" maxlength="100" required placeholder="Ex. Service du vendredi soir"></label>
         <label><span>Début</span><input type="datetime-local" name="startsAt" required></label><label><span>Fin</span><input type="datetime-local" name="endsAt" required></label>
@@ -5804,7 +5813,7 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
         <label><span>Rôle à prévenir</span><select name="roleId">${roleOptions}</select></label><label><span>Salon du rappel</span><select name="channelId">${channelOptions}</select></label>
         <label class="community-wide-field"><span>Consignes</span><textarea name="description" maxlength="1000"></textarea></label><button class="button" type="submit">Créer le créneau</button>
       </form>
-      <div class="community-record-list">${shiftRows || emptyPanel('Aucun créneau à venir.')}</div>
+      <div class="community-record-list">${shiftRows || emptyPanel('Aucun créneau enregistré. Le planning reste disponible.')}</div>
       ${planning.absences.length ? `<div class="community-absence-strip"><strong>Absences déclarées</strong>${planning.absences.map(item => `<span><code>${escapeHtml(item.userId)}</code> · ${escapeHtml(formatAuditDate(item.startsAt))} → ${escapeHtml(formatAuditDate(item.endsAt))}</span>`).join('')}</div>` : ''}
     </section>
     <section class="community-section community-suggestions"><div class="community-section-heading"><div><span>Boîte à idées</span><h3>Propositions de la communauté</h3></div><strong>${escapeHtml(suggestions.length)} idée(s)</strong></div><div class="community-record-list">${suggestionRows || emptyPanel('Aucune suggestion pour le moment.')}</div></section>
@@ -6357,7 +6366,7 @@ function planningSpreadsheetLayout(sourceColumns, sourceRows) {
     return match ? { date: match[1], time: match[2] } : { date: value, time: '' };
   };
   const columns = [
-    'Date', 'Horaires', 'Créneau', 'Places', 'Présents', 'Peut-être', 'Absents',
+    'Date', 'Horaires', 'Créneau', 'État', 'Places', 'Présents', 'Peut-être', 'Absents',
     'Équipe présente', 'Équipe incertaine', 'Équipe absente', 'Rôle', 'Salon', 'Consignes'
   ];
   const rows = sourceRows.map((row) => {
@@ -6370,6 +6379,7 @@ function planningSpreadsheetLayout(sourceColumns, sourceRows) {
       start.date,
       schedule,
       cell(row, 'Créneau'),
+      cell(row, 'État'),
       cell(row, 'Places'),
       cell(row, 'Disponibles'),
       cell(row, 'Incertains'),
@@ -6418,7 +6428,7 @@ function spreadsheetClipboardHtml(kind, text) {
   const subtitleCells = Array.from({ length: columnCount }, (_, index) => (
     `<td style="height:${isPlanning ? '26' : '20'}px;padding:${isPlanning ? '10px 14px' : '7px 10px'};background:#dff4f3;color:#31505d;font-family:Arial,sans-serif;font-size:${isPlanning ? '12' : '10'}px;border:1px solid #c8d9df;">${index === 0 ? `${escapeHtml(guildName)} · Généré le ${escapeHtml(generatedAt)}` : ''}</td>`
   )).join('');
-  const planningWidths = [110, 135, 220, 90, 90, 95, 90, 220, 220, 220, 180, 170, 300];
+  const planningWidths = [110, 135, 220, 105, 90, 90, 95, 90, 220, 220, 220, 180, 170, 300];
   const headerCells = columns.map((column, columnIndex) => {
     const availabilityHeader = column === 'Présents' || column === 'Équipe présente'
       ? '#27765a'
@@ -6426,7 +6436,7 @@ function spreadsheetClipboardHtml(kind, text) {
         ? '#9a6519'
         : (column === 'Absents' || column === 'Équipe absente' ? '#9b3f49' : '#176174'));
     const width = isPlanning ? planningWidths[columnIndex] : null;
-    const align = isPlanning && ['Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
+    const align = isPlanning && ['État', 'Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
     return `<th style="${width ? `width:${width}px;min-width:${width}px;` : ''}height:${isPlanning ? '34' : '24'}px;padding:${isPlanning ? '12px 14px' : '9px 10px'};background:${availabilityHeader};color:#ffffff;font-family:Arial,sans-serif;font-size:${isPlanning ? '13' : '11'}px;font-weight:700;text-align:${align};border:1px solid #0f4b5a;white-space:nowrap;">${escapeHtml(column)}</th>`;
   }).join('');
   const bodyRows = dataRows.map((row, rowIndex) => {
@@ -6438,10 +6448,13 @@ function spreadsheetClipboardHtml(kind, text) {
       const isPresent = isPlanning && (column === 'Présents' || column === 'Équipe présente');
       const isMaybe = isPlanning && (column === 'Peut-être' || column === 'Équipe incertaine');
       const isAbsent = isPlanning && (column === 'Absents' || column === 'Équipe absente');
-      const cellBackground = isPresent ? '#e2f4eb' : (isMaybe ? '#fff2d8' : (isAbsent ? '#fde8ea' : background));
+      const isCompleted = isPlanning && column === 'État' && value === 'Terminé';
+      const isCancelled = isPlanning && column === 'État' && value === 'Annulé';
+      const isUpcoming = isPlanning && column === 'État' && value === 'À venir';
+      const cellBackground = isPresent || isUpcoming ? '#e2f4eb' : (isMaybe ? '#fff2d8' : (isAbsent || isCancelled ? '#fde8ea' : (isCompleted ? '#e9eef1' : background)));
       const width = isPlanning ? planningWidths[columnIndex] : null;
-      const align = isPlanning && ['Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
-      const emphasis = isPlanning && ['Date', 'Horaires', 'Créneau', 'Présents', 'Peut-être', 'Absents'].includes(column) ? '700' : '400';
+      const align = isPlanning && ['État', 'Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
+      const emphasis = isPlanning && ['Date', 'Horaires', 'Créneau', 'État', 'Présents', 'Peut-être', 'Absents'].includes(column) ? '700' : '400';
       const wrap = isPlanning && ['Équipe présente', 'Équipe incertaine', 'Équipe absente', 'Consignes'].includes(column) ? 'normal' : 'nowrap';
       return `<td style="${width ? `width:${width}px;min-width:${width}px;` : ''}height:${isPlanning ? '44' : 'auto'}px;padding:${isPlanning ? '12px 14px' : '8px 10px'};background:${cellBackground};color:#17242d;font-family:Arial,sans-serif;font-size:${isPlanning ? '12' : '10'}px;font-weight:${emphasis};text-align:${align};border:1px solid #c8d9df;vertical-align:middle;white-space:${wrap};mso-number-format:'\\@';">${escapeHtml(value)}</td>`;
     }).join('');
@@ -6993,6 +7006,11 @@ function attachDashboardHandlers() {
 
       if (form.dataset.payrollArchiveWeek) {
         expandedPayrollArchiveWeek = form.dataset.payrollArchiveWeek;
+      }
+
+      if (form.dataset.confirmMessage) {
+        const message = window.NoctigardeI18n?.translate?.(form.dataset.confirmMessage) || form.dataset.confirmMessage;
+        if (!window.confirm(message)) return;
       }
 
       try {

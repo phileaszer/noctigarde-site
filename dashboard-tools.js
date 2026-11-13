@@ -163,9 +163,7 @@
     panel.className = 'workspace-tools';
     panel.dataset.workspaceTools = '';
     const planningShifts = context.state?.community?.planning?.shifts || [];
-    const planningAction = planningShifts.length
-      ? `<div class="workspace-inline-actions"><button class="button button-small" type="button" data-planning-sheets>Google Sheets</button><a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`
-      : '<button class="button button-small button-ghost" type="button" data-go-planning>Créer un créneau</button>';
+    const planningAction = `<div class="workspace-inline-actions"><button class="button button-small" type="button" data-planning-sheets>Google Sheets</button><a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`;
     panel.innerHTML = `
       <div class="workspace-commandbar">
         <label class="workspace-search"><span class="visually-hidden">Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Rechercher un membre, rôle, ticket ou réglage"></label>
@@ -201,7 +199,7 @@
             </div>
             <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
               <div class="workspace-action-list">
-                <article><div><strong>Exporter le planning</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) à venir. Choisis une feuille de calcul ou ton calendrier.` : 'Aucun créneau futur à exporter pour le moment.'}</small></div>${planningAction}</article>
+                <article><div><strong>Exporter le planning</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) conservé(s). Les anciens restent visibles jusqu’à leur suppression.` : 'Le planning est vide, mais les exports restent disponibles.'}</small></div>${planningAction}</article>
                 <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
                 <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
               </div>
