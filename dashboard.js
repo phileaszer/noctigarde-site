@@ -6546,6 +6546,17 @@ async function prepareReportForGoogleSheets(kind, button = null) {
   setLoading(button, true);
 
   try {
+    if (kind === 'planning') {
+      const googleSheet = currentState?.community?.planning?.googleSheet || {};
+      if (googleSheet.linked && googleSheet.url) {
+        window.open(googleSheet.url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      if (!googleSheet.configured) throw new Error('La liaison Google Sheets doit encore être configurée par la fondatrice.');
+      const payload = await api(`/api/guilds/${selectedGuildId}/google-sheets/connect`, { method: 'POST', body: '{}' });
+      window.location.assign(payload.authorizationUrl);
+      return;
+    }
     const url = new URL(`/api/guilds/${encodeURIComponent(selectedGuildId)}/reports/${encodeURIComponent(kind)}`, window.location.origin);
     url.searchParams.set('format', 'tsv');
     const response = await fetch(url, {

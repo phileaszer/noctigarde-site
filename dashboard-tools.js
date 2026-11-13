@@ -163,7 +163,11 @@
     panel.className = 'workspace-tools';
     panel.dataset.workspaceTools = '';
     const planningShifts = context.state?.community?.planning?.shifts || [];
-    const planningAction = `<div class="workspace-inline-actions"><button class="button button-small" type="button" data-planning-sheets>Google Sheets</button><a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`;
+    const googleSheet = context.state?.community?.planning?.googleSheet || {};
+    const googleSheetActions = googleSheet.linked
+      ? `<a class="button button-small" href="${escapeHtml(googleSheet.url)}" target="_blank" rel="noopener noreferrer">Ouvrir la feuille liée</a><button class="button button-small button-ghost" type="button" data-planning-sheets-sync>Synchroniser</button><button class="button button-small button-ghost" type="button" data-planning-sheets-unlink>Délier</button>`
+      : `<button class="button button-small" type="button" data-planning-sheets-connect ${googleSheet.configured ? '' : 'disabled'}>${googleSheet.configured ? 'Lier Google Sheets' : 'Configuration Google requise'}</button>`;
+    const planningAction = `<div class="workspace-inline-actions">${googleSheetActions}<a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`;
     panel.innerHTML = `
       <div class="workspace-commandbar">
         <label class="workspace-search"><span class="visually-hidden">Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Rechercher un membre, rôle, ticket ou réglage"></label>
@@ -199,7 +203,7 @@
             </div>
             <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
               <div class="workspace-action-list">
-                <article><div><strong>Exporter le planning</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) conservé(s). Les anciens restent visibles jusqu’à leur suppression.` : 'Le planning est vide, mais les exports restent disponibles.'}</small></div>${planningAction}</article>
+                <article><div><strong>Planning Google Sheets</strong><small>${googleSheet.linked ? (googleSheet.lastError ? 'La dernière synchronisation a échoué. Tu peux la relancer.' : 'Une seule feuille liée à ce serveur, mise à jour après chaque changement.') : (planningShifts.length ? `${planningShifts.length} créneau(x) prêt(s) à synchroniser dans une feuille unique.` : 'Lie une feuille maintenant : elle restera prête pour les prochains créneaux.')}</small></div>${planningAction}</article>
                 <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
                 <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
               </div>
@@ -279,9 +283,30 @@
         window.requestAnimationFrame(() => document.querySelector('[data-dashboard-subtab="planning"]')?.click());
         return;
       }
-      if (event.target.closest('[data-planning-sheets]')) {
-        const button = event.target.closest('[data-planning-sheets]');
-        await bridge().openReportInGoogleSheets?.('planning', button);
+      if (event.target.closest('[data-planning-sheets-connect]')) {
+        const payload = await bridge().request(`/api/guilds/${context.guildId}/google-sheets/connect`, { method: 'POST', body: '{}' });
+        window.location.assign(payload.authorizationUrl);
+        return;
+      }
+      if (event.target.closest('[data-planning-sheets-sync]')) {
+        const button = event.target.closest('[data-planning-sheets-sync]');
+        const label = button.textContent;
+        button.disabled = true;
+        try {
+          await bridge().request(`/api/guilds/${context.guildId}/google-sheets/sync`, { method: 'POST', body: '{}' });
+          button.textContent = 'Synchronisé';
+          await bridge().refresh?.();
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = label;
+          throw error;
+        }
+        return;
+      }
+      if (event.target.closest('[data-planning-sheets-unlink]')) {
+        if (!window.confirm('Délier cette feuille ? Le fichier restera dans Google Drive.')) return;
+        await bridge().request(`/api/guilds/${context.guildId}/google-sheets/unlink`, { method: 'POST', body: '{}' });
+        await bridge().refresh?.();
         return;
       }
       const targetButton = event.target.closest('[data-workspace-search-target]');
