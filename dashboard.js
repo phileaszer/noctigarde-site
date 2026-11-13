@@ -6349,14 +6349,56 @@ function copyTextForSpreadsheet(text) {
   return Promise.resolve();
 }
 
+function planningSpreadsheetLayout(sourceColumns, sourceRows) {
+  const columnIndexes = new Map(sourceColumns.map((column, index) => [column, index]));
+  const cell = (row, column) => String(row[columnIndexes.get(column)] ?? '');
+  const splitDateTime = (value) => {
+    const match = /^(.+?)\s+(\d{1,2}:\d{2})$/.exec(String(value || '').trim());
+    return match ? { date: match[1], time: match[2] } : { date: value, time: '' };
+  };
+  const columns = [
+    'Date', 'Horaires', 'Créneau', 'Places', 'Présents', 'Peut-être', 'Absents',
+    'Équipe présente', 'Équipe incertaine', 'Équipe absente', 'Rôle', 'Salon', 'Consignes'
+  ];
+  const rows = sourceRows.map((row) => {
+    const start = splitDateTime(cell(row, 'Début'));
+    const end = splitDateTime(cell(row, 'Fin'));
+    const schedule = start.date === end.date
+      ? `${start.time} - ${end.time}`
+      : `${start.time} - ${end.date} ${end.time}`;
+    return [
+      start.date,
+      schedule,
+      cell(row, 'Créneau'),
+      cell(row, 'Places'),
+      cell(row, 'Disponibles'),
+      cell(row, 'Incertains'),
+      cell(row, 'Indisponibles'),
+      cell(row, 'Membres disponibles'),
+      cell(row, 'Membres incertains'),
+      cell(row, 'Membres indisponibles'),
+      cell(row, 'Rôle prévenu'),
+      cell(row, 'Salon du rappel'),
+      cell(row, 'Consignes')
+    ];
+  });
+  return { columns, rows };
+}
+
 function spreadsheetClipboardHtml(kind, text) {
-  const rows = String(text || '')
+  const parsedRows = String(text || '')
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .filter((row, index, list) => row.length || index < list.length - 1)
     .map((row) => row.split('\t'));
-  const columns = rows[0] || ['Données'];
-  const dataRows = rows.slice(1);
+  let columns = parsedRows[0] || ['Données'];
+  let dataRows = parsedRows.slice(1);
+  const isPlanning = kind === 'planning';
+  if (isPlanning) {
+    const layout = planningSpreadsheetLayout(columns, dataRows);
+    columns = layout.columns;
+    dataRows = layout.rows;
+  }
   const columnCount = Math.max(columns.length, 1);
   const reportTitle = {
     service: 'Registre des services',
@@ -6371,26 +6413,46 @@ function spreadsheetClipboardHtml(kind, text) {
     timeStyle: 'short'
   }).format(new Date());
   const titleCells = Array.from({ length: columnCount }, (_, index) => (
-    `<td style="padding:12px 10px;background:#102d3a;color:#ffffff;font-family:Arial,sans-serif;font-size:${index === 0 ? '16' : '11'}px;font-weight:700;border:1px solid #102d3a;">${index === 0 ? escapeHtml(reportTitle) : ''}</td>`
+    `<td style="height:${isPlanning ? '38' : '28'}px;padding:${isPlanning ? '16px 14px' : '12px 10px'};background:#102d3a;color:#ffffff;font-family:Arial,sans-serif;font-size:${index === 0 ? (isPlanning ? '20' : '16') : '11'}px;font-weight:700;border:1px solid #102d3a;">${index === 0 ? escapeHtml(reportTitle) : ''}</td>`
   )).join('');
   const subtitleCells = Array.from({ length: columnCount }, (_, index) => (
-    `<td style="padding:7px 10px;background:#dff4f3;color:#31505d;font-family:Arial,sans-serif;font-size:10px;border:1px solid #c8d9df;">${index === 0 ? `${escapeHtml(guildName)} · Généré le ${escapeHtml(generatedAt)}` : ''}</td>`
+    `<td style="height:${isPlanning ? '26' : '20'}px;padding:${isPlanning ? '10px 14px' : '7px 10px'};background:#dff4f3;color:#31505d;font-family:Arial,sans-serif;font-size:${isPlanning ? '12' : '10'}px;border:1px solid #c8d9df;">${index === 0 ? `${escapeHtml(guildName)} · Généré le ${escapeHtml(generatedAt)}` : ''}</td>`
   )).join('');
-  const headerCells = columns.map((column) => (
-    `<th style="padding:9px 10px;background:#176174;color:#ffffff;font-family:Arial,sans-serif;font-size:11px;font-weight:700;text-align:left;border:1px solid #0f4b5a;white-space:nowrap;">${escapeHtml(column)}</th>`
-  )).join('');
+  const planningWidths = [110, 135, 220, 90, 90, 95, 90, 220, 220, 220, 180, 170, 300];
+  const headerCells = columns.map((column, columnIndex) => {
+    const availabilityHeader = column === 'Présents' || column === 'Équipe présente'
+      ? '#27765a'
+      : (column === 'Peut-être' || column === 'Équipe incertaine'
+        ? '#9a6519'
+        : (column === 'Absents' || column === 'Équipe absente' ? '#9b3f49' : '#176174'));
+    const width = isPlanning ? planningWidths[columnIndex] : null;
+    const align = isPlanning && ['Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
+    return `<th style="${width ? `width:${width}px;min-width:${width}px;` : ''}height:${isPlanning ? '34' : '24'}px;padding:${isPlanning ? '12px 14px' : '9px 10px'};background:${availabilityHeader};color:#ffffff;font-family:Arial,sans-serif;font-size:${isPlanning ? '13' : '11'}px;font-weight:700;text-align:${align};border:1px solid #0f4b5a;white-space:nowrap;">${escapeHtml(column)}</th>`;
+  }).join('');
   const bodyRows = dataRows.map((row, rowIndex) => {
     const background = rowIndex % 2 ? '#edf5f6' : '#ffffff';
     const cells = columns.map((column, columnIndex) => {
       const rawValue = String(row[columnIndex] ?? '');
       const preserveAsText = /(^|\s)id(\s|$)/i.test(column) || /^\d{15,20}$/.test(rawValue);
-      const value = preserveAsText && !rawValue.startsWith("'") ? `'${rawValue}` : rawValue;
-      return `<td style="padding:8px 10px;background:${background};color:#17242d;font-family:Arial,sans-serif;font-size:10px;border:1px solid #c8d9df;vertical-align:top;white-space:nowrap;mso-number-format:'\\@';">${escapeHtml(value)}</td>`;
+      const value = preserveAsText && !rawValue.startsWith("'") ? `'${rawValue}` : (rawValue || (isPlanning ? '—' : ''));
+      const isPresent = isPlanning && (column === 'Présents' || column === 'Équipe présente');
+      const isMaybe = isPlanning && (column === 'Peut-être' || column === 'Équipe incertaine');
+      const isAbsent = isPlanning && (column === 'Absents' || column === 'Équipe absente');
+      const cellBackground = isPresent ? '#e2f4eb' : (isMaybe ? '#fff2d8' : (isAbsent ? '#fde8ea' : background));
+      const width = isPlanning ? planningWidths[columnIndex] : null;
+      const align = isPlanning && ['Places', 'Présents', 'Peut-être', 'Absents'].includes(column) ? 'center' : 'left';
+      const emphasis = isPlanning && ['Date', 'Horaires', 'Créneau', 'Présents', 'Peut-être', 'Absents'].includes(column) ? '700' : '400';
+      const wrap = isPlanning && ['Équipe présente', 'Équipe incertaine', 'Équipe absente', 'Consignes'].includes(column) ? 'normal' : 'nowrap';
+      return `<td style="${width ? `width:${width}px;min-width:${width}px;` : ''}height:${isPlanning ? '44' : 'auto'}px;padding:${isPlanning ? '12px 14px' : '8px 10px'};background:${cellBackground};color:#17242d;font-family:Arial,sans-serif;font-size:${isPlanning ? '12' : '10'}px;font-weight:${emphasis};text-align:${align};border:1px solid #c8d9df;vertical-align:middle;white-space:${wrap};mso-number-format:'\\@';">${escapeHtml(value)}</td>`;
     }).join('');
     return `<tr>${cells}</tr>`;
   }).join('');
 
-  return `<!doctype html><html><body><table style="border-collapse:collapse;border-spacing:0;">`
+  const columnDefinitions = isPlanning
+    ? `<colgroup>${planningWidths.map(width => `<col style="width:${width}px;min-width:${width}px;">`).join('')}</colgroup>`
+    : '';
+
+  return `<!doctype html><html><body><table style="border-collapse:collapse;border-spacing:0;${isPlanning ? 'font-size:12px;' : ''}">${columnDefinitions}`
     + `<tr>${titleCells}</tr><tr>${subtitleCells}</tr><tr>${headerCells}</tr>${bodyRows}`
     + '</table></body></html>';
 }
