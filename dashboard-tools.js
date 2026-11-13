@@ -144,35 +144,6 @@
     return copied;
   }
 
-  async function downloadPlanning(button) {
-    const originalLabel = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Préparation…';
-    try {
-      const response = await fetch(`/api/guilds/${context.guildId}/planning.ics`, {
-        credentials: 'include',
-        headers: { Accept: 'text/calendar' }
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || `Téléchargement impossible (${response.status}).`);
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `planning-noctigarde-${context.guildId}.ics`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast('Planning téléchargé.');
-    } finally {
-      button.disabled = false;
-      button.textContent = originalLabel;
-    }
-  }
-
   function selectWorkspaceView(root, view) {
     root.querySelectorAll('[data-workspace-view]').forEach(button => {
       const active = button.dataset.workspaceView === view;
@@ -191,6 +162,10 @@
     const panel = document.createElement('section');
     panel.className = 'workspace-tools';
     panel.dataset.workspaceTools = '';
+    const planningShifts = context.state?.community?.planning?.shifts || [];
+    const planningAction = planningShifts.length
+      ? `<a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Télécharger</a>`
+      : '<button class="button button-small button-ghost" type="button" data-go-planning>Créer un créneau</button>';
     panel.innerHTML = `
       <div class="workspace-commandbar">
         <label class="workspace-search"><span class="visually-hidden">Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Rechercher un membre, rôle, ticket ou réglage"></label>
@@ -226,7 +201,7 @@
             </div>
             <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
               <div class="workspace-action-list">
-                <article><div><strong>Planning au format calendrier</strong><small>Pour l’ouvrir dans ton application de calendrier.</small></div><button class="button button-small button-ghost" type="button" data-download-planning>Télécharger</button></article>
+                <article><div><strong>Planning au format calendrier</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) à venir, prêt(s) à être exporté(s).` : 'Aucun créneau futur à exporter pour le moment.'}</small></div>${planningAction}</article>
                 <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
                 <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
               </div>
@@ -298,6 +273,14 @@
         selectWorkspaceView(root, viewButton.dataset.workspaceView);
         return;
       }
+      if (event.target.closest('[data-go-planning]')) {
+        const dialog = root.querySelector('[data-workspace-dialog]');
+        if (typeof dialog?.close === 'function') dialog.close();
+        else dialog?.removeAttribute('open');
+        document.querySelector('[data-dashboard-tab="community"]')?.click();
+        window.requestAnimationFrame(() => document.querySelector('[data-dashboard-subtab="planning"]')?.click());
+        return;
+      }
       const targetButton = event.target.closest('[data-workspace-search-target]');
       if (targetButton) { document.querySelector(`[data-dashboard-tab="${CSS.escape(targetButton.dataset.workspaceSearchTarget)}"]`)?.click(); return; }
       const templateButton = event.target.closest('[data-apply-template]');
@@ -343,12 +326,6 @@
         const copied = field ? await copyText(field.value) : false;
         toast(copied ? 'Lien copié.' : 'Sélectionne le lien pour le copier.', copied ? 'success' : 'error');
         field?.select();
-        return;
-      }
-      const downloadButton = event.target.closest('[data-download-planning]');
-      if (downloadButton) {
-        try { await downloadPlanning(downloadButton); }
-        catch (error) { toast(error.message, 'error'); }
         return;
       }
       if (event.target.closest('[data-add-passkey]')) { try { await registerPasskey(); } catch (error) { toast(error.message, 'error'); } return; }

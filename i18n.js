@@ -1008,6 +1008,8 @@
     'Lien du diagnostic support': 'Support diagnostic link',
     'Copier le lien': 'Copy link',
     'Planning téléchargé.': 'Schedule downloaded.',
+    'Créer un créneau': 'Create a time slot',
+    'Aucun créneau futur à exporter pour le moment.': 'There are no upcoming time slots to export yet.',
     'Lien calendrier créé et copié.': 'Calendar link created and copied.',
     'Lien calendrier créé. Tu peux le copier ci-dessous.': 'Calendar link created. You can copy it below.',
     'Diagnostic créé et lien copié.': 'Diagnostic created and link copied.',
