@@ -166,7 +166,9 @@
     const googleSheet = context.state?.community?.planning?.googleSheet || {};
     const googleSheetActions = googleSheet.linked
       ? `<a class="button button-small" href="${escapeHtml(googleSheet.url)}" target="_blank" rel="noopener noreferrer">Ouvrir la feuille liée</a><button class="button button-small button-ghost" type="button" data-planning-sheets-sync>Synchroniser</button><button class="button button-small button-ghost" type="button" data-planning-sheets-unlink>Délier</button>`
-      : `<button class="button button-small" type="button" data-planning-sheets-connect ${googleSheet.configured ? '' : 'disabled'}>${googleSheet.configured ? 'Lier Google Sheets' : 'Configuration Google requise'}</button>`;
+      : (googleSheet.configured
+        ? '<button class="button button-small" type="button" data-planning-sheets-connect>Lier Google Sheets</button>'
+        : '<button class="button button-small" type="button" data-planning-sheets>Google Sheets manuel</button>');
     const planningAction = `<div class="workspace-inline-actions">${googleSheetActions}<a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`;
     panel.innerHTML = `
       <div class="workspace-commandbar">
@@ -286,6 +288,11 @@
       if (event.target.closest('[data-planning-sheets-connect]')) {
         const payload = await bridge().request(`/api/guilds/${context.guildId}/google-sheets/connect`, { method: 'POST', body: '{}' });
         window.location.assign(payload.authorizationUrl);
+        return;
+      }
+      if (event.target.closest('[data-planning-sheets]')) {
+        const button = event.target.closest('[data-planning-sheets]');
+        await bridge().openReportInGoogleSheets?.('planning', button);
         return;
       }
       if (event.target.closest('[data-planning-sheets-sync]')) {

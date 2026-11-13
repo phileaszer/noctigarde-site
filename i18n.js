@@ -2962,6 +2962,7 @@
     "Synchronisé": "Synced",
     "Délier": "Unlink",
     "Lier Google Sheets": "Link Google Sheets",
+    "Google Sheets manuel": "Manual Google Sheets export",
     "Configuration Google requise": "Google setup required",
     "Une seule feuille liée à ce serveur, mise à jour après chaque changement.": "One spreadsheet linked to this server and updated after every change.",
     "La dernière synchronisation a échoué. Tu peux la relancer.": "The last sync failed. You can retry it.",
