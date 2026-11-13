@@ -6557,6 +6557,7 @@ async function prepareReportForGoogleSheets(kind, button = null) {
         window.location.assign(payload.authorizationUrl);
         return;
       }
+      throw new Error('La liaison Google Sheets doit encore être configurée par la fondatrice.');
     }
     const url = new URL(`/api/guilds/${encodeURIComponent(selectedGuildId)}/reports/${encodeURIComponent(kind)}`, window.location.origin);
     url.searchParams.set('format', 'tsv');
