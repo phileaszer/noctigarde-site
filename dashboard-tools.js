@@ -9,7 +9,13 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   const bridge = () => window.NoctigardeDashboardBridge;
-  const request = (path, options) => bridge()?.request(path, options);
+  const request = (path, options) => {
+    const client = bridge()?.request;
+    if (typeof client !== 'function') {
+      return Promise.reject(new Error('Les outils du serveur sont encore en cours de chargement.'));
+    }
+    return client(path, options);
+  };
   const encodeBase64Url = (buffer) => {
     const bytes = new Uint8Array(buffer);
     let value = '';
@@ -104,6 +110,80 @@
     `;
   }
 
+  function renderGeneratedLink(kind, url) {
+    const host = document.querySelector('[data-workspace-generated-link]');
+    if (!host) return;
+    const label = kind === 'calendar' ? 'Lien d’abonnement au calendrier' : 'Lien du diagnostic support';
+    host.hidden = false;
+    host.innerHTML = `
+      <label><span>${label}</span><input type="text" value="${escapeHtml(url)}" readonly data-generated-link></label>
+      <div class="workspace-link-actions">
+        <button class="button button-small" type="button" data-copy-generated>Copier le lien</button>
+        <a class="button button-small button-ghost" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a>
+      </div>
+    `;
+    host.querySelector('[data-generated-link]')?.select();
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {}
+    }
+    const field = document.createElement('textarea');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    return copied;
+  }
+
+  async function downloadPlanning(button) {
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Préparation…';
+    try {
+      const response = await fetch(`/api/guilds/${context.guildId}/planning.ics`, {
+        credentials: 'include',
+        headers: { Accept: 'text/calendar' }
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Téléchargement impossible (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `planning-noctigarde-${context.guildId}.ics`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('Planning téléchargé.');
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
+  function selectWorkspaceView(root, view) {
+    root.querySelectorAll('[data-workspace-view]').forEach(button => {
+      const active = button.dataset.workspaceView === view;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    root.querySelectorAll('[data-workspace-view-panel]').forEach(panel => {
+      panel.hidden = panel.dataset.workspaceViewPanel !== view;
+    });
+  }
+
   function renderTools() {
     const stage = document.querySelector('.dashboard-tab-stage');
     if (!stage || !context?.guildId || (!context?.state?.viewerAccess?.canManageGuild && !context?.state?.siteAccess?.canViewSitePanel)) return;
@@ -112,38 +192,52 @@
     panel.className = 'workspace-tools';
     panel.dataset.workspaceTools = '';
     panel.innerHTML = `
-      <div class="workspace-search">
-        <label><span>Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Membre, rôle, ticket, sanction ou réglage"></label>
-        <div class="workspace-search-results" data-workspace-search-results hidden></div>
+      <div class="workspace-commandbar">
+        <label class="workspace-search"><span class="visually-hidden">Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Rechercher un membre, rôle, ticket ou réglage"></label>
+        <button class="button button-small workspace-open-button" type="button" data-open-workspace-tools>Outils du serveur</button>
       </div>
-      <details>
-        <summary><span>Configuration guidée</span><small>Modèles, historique et permissions</small></summary>
-        <div class="workspace-tool-grid">
-          <section><h3>Modèles de serveur</h3><p>Prévisualise toujours les changements avant de les appliquer.</p><div class="workspace-stack">${renderTemplates()}</div></section>
-          <section><h3>Historique</h3><p>Chaque changement de configuration peut être comparé puis restauré.</p><div class="workspace-stack">${renderHistory()}</div></section>
-          <section>
-            <h3>Simuler un accès</h3><p>Vérifie pourquoi un membre ou un rôle peut utiliser une action.</p>
-            <form data-permission-simulator class="workspace-simulator">
-              <select name="targetType"><option value="member">Membre</option><option value="role">Rôle</option></select>
-              <input name="targetId" required pattern="\\d{17,20}" placeholder="ID Discord">
-              <select name="capability"><option value="service">Services</option><option value="tickets">Tickets</option><option value="moderation">Modération</option><option value="timeout">Timeout</option><option value="kick">Exclusion</option><option value="ban">Bannissement</option><option value="configuration">Configuration</option></select>
-              <button class="button button-small" type="submit">Vérifier</button>
-            </form><div data-permission-result></div>
-          </section>
+      <div class="workspace-search-results" data-workspace-search-results hidden></div>
+      <dialog class="workspace-dialog" data-workspace-dialog>
+        <div class="workspace-dialog-shell">
+          <header class="workspace-dialog-header">
+            <div><span class="eyebrow">Gestion du serveur</span><h2>Outils du serveur</h2><p>Les réglages avancés sont rangés ici pour garder le dashboard lisible.</p></div>
+            <button class="workspace-dialog-close" type="button" data-close-workspace-tools aria-label="Fermer">×</button>
+          </header>
+          <nav class="workspace-view-tabs" role="tablist" aria-label="Outils du serveur">
+            <button type="button" role="tab" aria-selected="true" class="is-active" data-workspace-view="configuration">Configuration</button>
+            <button type="button" role="tab" aria-selected="false" data-workspace-view="planning">Planning</button>
+            <button type="button" role="tab" aria-selected="false" data-workspace-view="security">Sécurité</button>
+          </nav>
+          <div class="workspace-dialog-body">
+            <div class="workspace-view-panel" data-workspace-view-panel="configuration">
+              <div class="workspace-tool-grid">
+                <section><h3>Modèles de serveur</h3><p>Prévisualise les changements avant de les appliquer.</p><div class="workspace-stack">${renderTemplates()}</div></section>
+                <section><h3>Historique</h3><p>Retrouve et restaure les dernières configurations.</p><div class="workspace-stack">${renderHistory()}</div></section>
+                <section>
+                  <h3>Simuler un accès</h3><p>Vérifie pourquoi un membre ou un rôle peut utiliser une action.</p>
+                  <form data-permission-simulator class="workspace-simulator">
+                    <select name="targetType"><option value="member">Membre</option><option value="role">Rôle</option></select>
+                    <input name="targetId" required pattern="\\d{17,20}" placeholder="ID Discord">
+                    <select name="capability"><option value="service">Services</option><option value="tickets">Tickets</option><option value="moderation">Modération</option><option value="timeout">Timeout</option><option value="kick">Exclusion</option><option value="ban">Bannissement</option><option value="configuration">Configuration</option></select>
+                    <button class="button button-small" type="submit">Vérifier</button>
+                  </form><div data-permission-result></div>
+                </section>
+              </div>
+            </div>
+            <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
+              <div class="workspace-action-list">
+                <article><div><strong>Planning au format calendrier</strong><small>Pour l’ouvrir dans ton application de calendrier.</small></div><button class="button button-small button-ghost" type="button" data-download-planning>Télécharger</button></article>
+                <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
+                <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
+              </div>
+              <div class="workspace-generated-link" data-workspace-generated-link hidden></div>
+            </div>
+            <div class="workspace-view-panel" data-workspace-view-panel="security" hidden>
+              <div data-security-content>${renderSecurity()}</div>
+            </div>
+          </div>
         </div>
-      </details>
-      <details>
-        <summary><span>Calendrier et assistance</span><small>Planning externe et diagnostic sans données privées</small></summary>
-        <div class="workspace-quick-actions">
-          <a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics">Télécharger le planning .ics</a>
-          <button class="button button-small button-ghost" type="button" data-calendar-link>Créer un lien calendrier</button>
-          <button class="button button-small button-ghost" type="button" data-support-report>Créer un diagnostic support</button>
-        </div>
-      </details>
-      <details>
-        <summary><span>Sécurité du compte</span><small>Passkeys et appareils connectés</small></summary>
-        <div data-security-content>${renderSecurity()}</div>
-      </details>
+      </dialog>
     `;
     stage.before(panel);
     bindTools(panel);
@@ -185,6 +279,25 @@
       }, 250);
     });
     root.addEventListener('click', async event => {
+      const openTools = event.target.closest('[data-open-workspace-tools]');
+      if (openTools) {
+        const dialog = root.querySelector('[data-workspace-dialog]');
+        selectWorkspaceView(root, 'configuration');
+        if (typeof dialog?.showModal === 'function') dialog.showModal();
+        else dialog?.setAttribute('open', '');
+        return;
+      }
+      if (event.target.closest('[data-close-workspace-tools]')) {
+        const dialog = root.querySelector('[data-workspace-dialog]');
+        if (typeof dialog?.close === 'function') dialog.close();
+        else dialog?.removeAttribute('open');
+        return;
+      }
+      const viewButton = event.target.closest('[data-workspace-view]');
+      if (viewButton) {
+        selectWorkspaceView(root, viewButton.dataset.workspaceView);
+        return;
+      }
       const targetButton = event.target.closest('[data-workspace-search-target]');
       if (targetButton) { document.querySelector(`[data-dashboard-tab="${CSS.escape(targetButton.dataset.workspaceSearchTarget)}"]`)?.click(); return; }
       const templateButton = event.target.closest('[data-apply-template]');
@@ -201,11 +314,41 @@
         return;
       }
       if (event.target.closest('[data-calendar-link]')) {
-        try { const payload = await request(`/api/guilds/${context.guildId}/calendar-token`, { method: 'POST' }); await navigator.clipboard.writeText(payload.url); toast('Lien calendrier copié. Il peut être ajouté à Google Agenda, Apple ou Outlook.'); } catch (error) { toast(error.message, 'error'); }
+        const button = event.target.closest('[data-calendar-link]');
+        button.disabled = true;
+        try {
+          const payload = await request(`/api/guilds/${context.guildId}/calendar-token`, { method: 'POST' });
+          renderGeneratedLink('calendar', payload.url);
+          const copied = await copyText(payload.url);
+          toast(copied ? 'Lien calendrier créé et copié.' : 'Lien calendrier créé. Tu peux le copier ci-dessous.');
+        } catch (error) { toast(error.message, 'error'); }
+        finally { button.disabled = false; }
         return;
       }
       if (event.target.closest('[data-support-report]')) {
-        try { const payload = await request(`/api/guilds/${context.guildId}/support-report`, { method: 'POST' }); await navigator.clipboard.writeText(payload.url); toast('Diagnostic anonyme copié. Il expirera dans 7 jours.'); } catch (error) { toast(error.message, 'error'); }
+        const button = event.target.closest('[data-support-report]');
+        button.disabled = true;
+        try {
+          const payload = await request(`/api/guilds/${context.guildId}/support-report`, { method: 'POST' });
+          renderGeneratedLink('support', payload.url);
+          const copied = await copyText(payload.url);
+          toast(copied ? 'Diagnostic créé et lien copié.' : 'Diagnostic créé. Son lien est affiché ci-dessous.');
+        } catch (error) { toast(error.message, 'error'); }
+        finally { button.disabled = false; }
+        return;
+      }
+      const copyGenerated = event.target.closest('[data-copy-generated]');
+      if (copyGenerated) {
+        const field = root.querySelector('[data-generated-link]');
+        const copied = field ? await copyText(field.value) : false;
+        toast(copied ? 'Lien copié.' : 'Sélectionne le lien pour le copier.', copied ? 'success' : 'error');
+        field?.select();
+        return;
+      }
+      const downloadButton = event.target.closest('[data-download-planning]');
+      if (downloadButton) {
+        try { await downloadPlanning(downloadButton); }
+        catch (error) { toast(error.message, 'error'); }
         return;
       }
       if (event.target.closest('[data-add-passkey]')) { try { await registerPasskey(); } catch (error) { toast(error.message, 'error'); } return; }
@@ -223,6 +366,9 @@
         const payload = await request(`/api/guilds/${context.guildId}/permission-simulator`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
         host.innerHTML = `<div class="workspace-result ${payload.result.allowed ? 'is-ok' : 'is-warning'}"><strong>${payload.result.allowed ? 'Accès autorisé' : 'Accès refusé'}</strong><p>${payload.result.reasons.map(escapeHtml).join(' ')}</p></div>`;
       } catch (error) { host.innerHTML = `<div class="workspace-result is-warning"><strong>Vérification impossible</strong><p>${escapeHtml(error.message)}</p></div>`; }
+    });
+    root.querySelector('[data-workspace-dialog]')?.addEventListener('click', event => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
     });
   }
 
