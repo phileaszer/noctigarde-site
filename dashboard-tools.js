@@ -164,7 +164,7 @@
     panel.dataset.workspaceTools = '';
     const planningShifts = context.state?.community?.planning?.shifts || [];
     const planningAction = planningShifts.length
-      ? `<a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Télécharger</a>`
+      ? `<div class="workspace-inline-actions"><button class="button button-small" type="button" data-planning-sheets>Google Sheets</button><a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`
       : '<button class="button button-small button-ghost" type="button" data-go-planning>Créer un créneau</button>';
     panel.innerHTML = `
       <div class="workspace-commandbar">
@@ -201,7 +201,7 @@
             </div>
             <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
               <div class="workspace-action-list">
-                <article><div><strong>Planning au format calendrier</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) à venir, prêt(s) à être exporté(s).` : 'Aucun créneau futur à exporter pour le moment.'}</small></div>${planningAction}</article>
+                <article><div><strong>Exporter le planning</strong><small>${planningShifts.length ? `${planningShifts.length} créneau(x) à venir. Choisis une feuille de calcul ou ton calendrier.` : 'Aucun créneau futur à exporter pour le moment.'}</small></div>${planningAction}</article>
                 <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
                 <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
               </div>
@@ -279,6 +279,11 @@
         else dialog?.removeAttribute('open');
         document.querySelector('[data-dashboard-tab="community"]')?.click();
         window.requestAnimationFrame(() => document.querySelector('[data-dashboard-subtab="planning"]')?.click());
+        return;
+      }
+      if (event.target.closest('[data-planning-sheets]')) {
+        const button = event.target.closest('[data-planning-sheets]');
+        await bridge().openReportInGoogleSheets?.('planning', button);
         return;
       }
       const targetButton = event.target.closest('[data-workspace-search-target]');

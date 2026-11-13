@@ -997,6 +997,9 @@
     'Prévisualise les changements avant de les appliquer.': 'Preview changes before applying them.',
     'Retrouve et restaure les dernières configurations.': 'Review and restore recent configurations.',
     'Planning au format calendrier': 'Calendar schedule',
+    'Planning des équipes': 'Team schedule',
+    'Exporter le planning': 'Export schedule',
+    'Ajouter au calendrier': 'Add to calendar',
     'Pour l’ouvrir dans ton application de calendrier.': 'Open it in your calendar application.',
     'Abonnement au planning': 'Schedule subscription',
     'Les changements futurs seront récupérés automatiquement.': 'Future changes will be retrieved automatically.',
@@ -2993,6 +2996,9 @@
 
     match = /^(\d+) entree\(s\) affichee\(s\)$/.exec(normalizedValue);
     if (match) return `${match[1]} displayed entr${match[1] === '1' ? 'y' : 'ies'}`;
+
+    match = /^(\d+) creneau\(x\) a venir\. Choisis une feuille de calcul ou ton calendrier\.$/.exec(normalizedValue);
+    if (match) return `${match[1]} upcoming shift${match[1] === '1' ? '' : 's'}. Choose a spreadsheet or your calendar.`;
 
     match = /^Actuel : (.+)\. Diffusion : (.+)\.$/.exec(normalizedValue);
     if (match) return `Current: ${translateValue(match[1], language)}. Delivery: ${translateValue(match[2], language)}.`;

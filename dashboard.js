@@ -4869,7 +4869,7 @@ function scheduledAnnouncementList(state) {
 }
 
 function reportScheduleList(state) {
-  const labels = { service: 'Services', payroll: 'Salaires', dossiers: 'Dossiers', moderation: 'Modération' };
+  const labels = { service: 'Services', payroll: 'Salaires', dossiers: 'Dossiers', moderation: 'Modération', planning: 'Planning' };
   const items = state.reportSchedules || [];
   if (!items.length) return '<p class="muted">Aucun rapport automatique configuré.</p>';
 
@@ -4984,9 +4984,9 @@ function renderOperationsPanel(state, channelOptions, premiumBadge, premiumTag) 
         <article class="inline-form operation-card" data-operation-section="reports">
           <div class="panel-mini-heading"><div><h3>Exports immédiats ${premiumTag}</h3><p class="muted">Le PDF est le format conseillé pour consulter, partager ou archiver un rapport.</p></div></div>
           <div class="report-download-grid">
-            ${['service', 'payroll', 'dossiers', 'moderation'].map(kind => `
+            ${['service', 'payroll', 'dossiers', 'moderation', 'planning'].map(kind => `
               <div class="report-download-row">
-                <strong>${escapeHtml({ service: 'Services', payroll: 'Salaires', dossiers: 'Tickets', moderation: 'Modération' }[kind])}</strong>
+                <strong>${escapeHtml({ service: 'Services', payroll: 'Salaires', dossiers: 'Tickets', moderation: 'Modération', planning: 'Planning' }[kind])}</strong>
                 <div class="report-download-actions">
                   <button class="button button-small" type="button" data-report-download="${kind}" data-report-format="pdf">Télécharger le PDF</button>
                   <button class="button button-small button-ghost report-sheets-button" type="button" data-report-sheets="${kind}" title="Copier le tableau pour Google Sheets">Google Sheets</button>
@@ -5003,7 +5003,7 @@ function renderOperationsPanel(state, channelOptions, premiumBadge, premiumTag) 
         <article class="inline-form operation-card" data-operation-section="reports">
           <div class="panel-mini-heading"><div><h3>Rapports automatiques ${premiumTag}</h3><p class="muted">Envoi hebdomadaire ou mensuel dans un salon Discord.</p></div></div>
           <form data-action-form="save-report-schedule" class="operation-form-grid">
-            <select name="reportKind"><option value="service">Services</option><option value="payroll">Salaires</option><option value="dossiers">Tickets</option><option value="moderation">Modération</option></select>
+            <select name="reportKind"><option value="service">Services</option><option value="payroll">Salaires</option><option value="dossiers">Tickets</option><option value="moderation">Modération</option><option value="planning">Planning</option></select>
             <select name="frequency"><option value="weekly">Chaque semaine</option><option value="monthly">Chaque mois</option></select>
             <select name="format"><option value="pdf">PDF</option><option value="xlsx">Excel / Google Sheets</option></select>
             <select name="channelId" required>${channelOptions}</select>
@@ -6059,7 +6059,8 @@ function renderDashboard() {
   window.NoctigardeDashboardBridge = {
     request: api,
     refresh: refreshGuildState,
-    guildId: selectedGuildId
+    guildId: selectedGuildId,
+    openReportInGoogleSheets: prepareReportForGoogleSheets
   };
   window.NoctigardeDashboardContext = {
     guildId: selectedGuildId,
@@ -6287,7 +6288,7 @@ async function downloadMaintenanceFile(kind, fileName, button = null) {
 }
 
 async function downloadReportFile(kind, format, button = null) {
-  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation'].includes(kind) || !['pdf', 'xlsx'].includes(format)) return;
+  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation', 'planning'].includes(kind) || !['pdf', 'xlsx'].includes(format)) return;
   setLoading(button, true);
   const url = new URL(`/api/guilds/${encodeURIComponent(selectedGuildId)}/reports/${encodeURIComponent(kind)}`, window.location.origin);
   url.searchParams.set('format', format);
@@ -6361,7 +6362,8 @@ function spreadsheetClipboardHtml(kind, text) {
     service: 'Registre des services',
     payroll: 'Registre des salaires',
     dossiers: 'Suivi des tickets',
-    moderation: 'Registre de modération'
+    moderation: 'Registre de modération',
+    planning: 'Planning des équipes'
   }[kind] || 'Rapport Noctigarde';
   const guildName = currentState?.guild?.name || selectedGuildPreview?.name || 'Serveur Discord';
   const generatedAt = new Intl.DateTimeFormat('fr-FR', {
@@ -6465,7 +6467,7 @@ function showGoogleSheetsReadyDialog(richFormatting = false) {
 }
 
 async function prepareReportForGoogleSheets(kind, button = null) {
-  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation'].includes(kind)) return;
+  if (!selectedGuildId || !['service', 'payroll', 'dossiers', 'moderation', 'planning'].includes(kind)) return;
   setLoading(button, true);
 
   try {
