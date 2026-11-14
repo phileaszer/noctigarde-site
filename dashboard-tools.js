@@ -165,7 +165,7 @@
     const planningShifts = context.state?.community?.planning?.shifts || [];
     const googleSheet = context.state?.community?.planning?.googleSheet || {};
     const googleSheetActions = googleSheet.linked
-      ? `<a class="button button-small" href="${escapeHtml(googleSheet.url)}" target="_blank" rel="noopener noreferrer">Ouvrir la feuille liée</a><button class="button button-small button-ghost" type="button" data-planning-sheets-sync>Synchroniser</button><button class="button button-small button-ghost" type="button" data-planning-sheets-unlink>Délier</button>`
+      ? `<a class="button button-small" href="${escapeHtml(googleSheet.url)}" target="_blank" rel="noopener noreferrer">Ouvrir la feuille liée</a><button class="button button-small button-ghost" type="button" data-planning-sheets-sync>Synchroniser</button><button class="button button-small button-ghost" type="button" data-planning-sheets-unlink>Délier</button><button class="button button-small button-danger" type="button" data-planning-sheets-disconnect>Supprimer et déconnecter</button>`
       : (googleSheet.configured
         ? '<button class="button button-small" type="button" data-planning-sheets-connect>Lier Google Sheets</button>'
         : '<button class="button button-small button-ghost" type="button" disabled>Configuration Google requise</button>');
@@ -306,9 +306,31 @@
         return;
       }
       if (event.target.closest('[data-planning-sheets-unlink]')) {
-        if (!window.confirm('Délier cette feuille ? Le fichier restera dans Google Drive.')) return;
-        await bridge().request(`/api/guilds/${context.guildId}/google-sheets/unlink`, { method: 'POST', body: '{}' });
+        if (!window.confirm('Délier cette feuille ? Elle restera dans Google Drive, mais Noctigarde ne pourra plus la mettre à jour.')) return;
+        const payload = await bridge().request(`/api/guilds/${context.guildId}/google-sheets/unlink`, { method: 'POST', body: '{}' });
         await bridge().refresh?.();
+        toast(payload.result?.remainingLinkedGuilds
+          ? 'Feuille déliée. Ton accès Google reste actif pour tes autres serveurs.'
+          : (payload.result?.revokeError ? 'Feuille déliée. Les données locales sont supprimées, mais Google n’a pas confirmé la révocation.' : 'Feuille déliée et accès Google retiré de Noctigarde.'),
+        payload.result?.revokeError ? 'error' : 'success');
+        return;
+      }
+      if (event.target.closest('[data-planning-sheets-disconnect]')) {
+        const warning = 'Supprimer définitivement cette feuille de Google Drive et effacer les données Google conservées par Noctigarde ?\n\nSi ton compte gère encore d’autres serveurs liés, leur accès sera conservé. Cette action est irréversible.';
+        if (!window.confirm(warning)) return;
+        const button = event.target.closest('[data-planning-sheets-disconnect]');
+        button.disabled = true;
+        try {
+          const payload = await bridge().request(`/api/guilds/${context.guildId}/google-sheets/disconnect`, { method: 'POST', body: '{}' });
+          await bridge().refresh?.();
+          toast(payload.result?.remainingLinkedGuilds
+            ? 'Feuille supprimée. Ton accès Google reste actif pour tes autres serveurs.'
+            : (payload.result?.revokeError ? 'Feuille supprimée. Les données locales sont effacées, mais Google n’a pas confirmé la révocation.' : 'Feuille supprimée et compte Google déconnecté de Noctigarde.'),
+          payload.result?.revokeError ? 'error' : 'success');
+        } catch (error) {
+          button.disabled = false;
+          throw error;
+        }
         return;
       }
       const targetButton = event.target.closest('[data-workspace-search-target]');
