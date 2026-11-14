@@ -4973,6 +4973,12 @@ function validationHistory(state) {
 }
 
 function renderOperationsPanel(state, channelOptions, premiumBadge, premiumTag) {
+  const planningSheet = state?.community?.planning?.googleSheet || {};
+  const planningSheetAction = planningSheet.linked && planningSheet.url
+    ? `<a class="button button-small button-ghost report-sheets-button" href="${escapeHtml(planningSheet.url)}" target="_blank" rel="noopener noreferrer">Ouvrir la feuille liée</a><button class="button button-small button-ghost" type="button" data-report-planning-sync>Synchroniser</button>`
+    : (planningSheet.configured
+      ? '<button class="button button-small button-ghost report-sheets-button" type="button" data-report-planning-connect>Lier Google Sheets</button>'
+      : '<button class="button button-small button-ghost report-sheets-button" type="button" disabled title="La liaison Google Sheets doit être configurée une seule fois par la fondatrice">Configuration Google requise</button>');
   return `
     <section class="dashboard-panel module-panel operations-panel">
       <div class="panel-heading row-heading">
@@ -4989,7 +4995,9 @@ function renderOperationsPanel(state, channelOptions, premiumBadge, premiumTag) 
                 <strong>${escapeHtml({ service: 'Services', payroll: 'Salaires', dossiers: 'Tickets', moderation: 'Modération', planning: 'Planning' }[kind])}</strong>
                 <div class="report-download-actions">
                   <button class="button button-small" type="button" data-report-download="${kind}" data-report-format="pdf">Télécharger le PDF</button>
-                  <button class="button button-small button-ghost report-sheets-button" type="button" data-report-sheets="${kind}" title="Copier le tableau pour Google Sheets">Google Sheets</button>
+                  ${kind === 'planning'
+                    ? planningSheetAction
+                    : `<button class="button button-small button-ghost report-sheets-button" type="button" data-report-sheets="${kind}" title="Copier le tableau pour Google Sheets">Google Sheets</button>`}
                   <details class="report-format-menu">
                     <summary class="button button-small button-ghost">Autres formats</summary>
                     <button class="button button-small button-ghost" type="button" data-report-download="${kind}" data-report-format="xlsx" title="Télécharge un vrai classeur pour Microsoft Excel">Télécharger XLSX</button>
@@ -6988,6 +6996,25 @@ function attachDashboardHandlers() {
   $$('[data-report-sheets]').forEach((button) => {
     button.addEventListener('click', () => {
       prepareReportForGoogleSheets(button.dataset.reportSheets, button);
+    });
+  });
+
+  $$('[data-report-planning-connect]').forEach((button) => {
+    button.addEventListener('click', () => prepareReportForGoogleSheets('planning', button));
+  });
+
+  $$('[data-report-planning-sync]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setLoading(button, true);
+      try {
+        await api(`/api/guilds/${selectedGuildId}/google-sheets/sync`, { method: 'POST', body: '{}' });
+        await refreshGuildState();
+        toast('La feuille liée a été synchronisée.');
+      } catch (error) {
+        toast(dashboardErrorMessage(error), 'error');
+      } finally {
+        setLoading(button, false);
+      }
     });
   });
 

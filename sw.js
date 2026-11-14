@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'noctigarde-shell-20261031-1';
+const CACHE_NAME = 'noctigarde-shell-20261113-2';
 const SHELL = [
   './',
   './index.html',
@@ -36,6 +36,14 @@ self.addEventListener('fetch', event => {
       caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
       return response;
     }).catch(() => caches.match(request).then(hit => hit || caches.match('./index.html'))));
+    return;
+  }
+  if (url.origin === self.location.origin && /\/(?:dashboard|dashboard-tools)\.js$/.test(url.pathname)) {
+    event.respondWith(fetch(request).then(response => {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+      return response;
+    }).catch(() => caches.match(request)));
     return;
   }
   if (url.origin === self.location.origin) {

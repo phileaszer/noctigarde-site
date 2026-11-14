@@ -2956,6 +2956,8 @@
     "… à venir · … conservé(s)": "… upcoming · … saved",
     "Le planning est vide, mais les exports restent disponibles.": "The schedule is empty, but exports remain available.",
     "La liaison Google Sheets doit encore être configurée par la fondatrice.": "The founder still needs to configure the Google Sheets connection.",
+    "La liaison Google Sheets doit être configurée une seule fois par la fondatrice": "The founder must configure the Google Sheets connection once",
+    "La feuille liée a été synchronisée.": "The linked spreadsheet has been synced.",
     "Planning Google Sheets": "Google Sheets schedule",
     "Ouvrir la feuille liée": "Open linked spreadsheet",
     "Synchroniser": "Sync",
