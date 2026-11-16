@@ -5495,7 +5495,7 @@ function founderDatabasePortabilityPanel(overview) {
   const topFindings = (report.findings || []).slice(0, 8);
   return `
     <section class="founder-storage-panel" aria-label="Préparation PostgreSQL">
-      <div class="panel-heading row-heading"><div><p class="eyebrow">Montée en charge</p><h3>Préparation PostgreSQL</h3><p class="muted">Noctigarde reste sur SQLite avec une seule instance. Ce relevé suit les adaptations nécessaires avant une future bascule.</p></div>${statusBadge(report.readyForAutomaticSwitch ? 'Prête' : `${report.findingCount} adaptation(s)`, report.readyForAutomaticSwitch)}</div>
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Montée en charge</p><h3>Préparation PostgreSQL</h3><p class="muted">Noctigarde reste sur SQLite avec une seule instance. Ce relevé suit les validations nécessaires avant une future bascule.</p></div>${statusBadge(report.readyForAutomaticSwitch ? 'Prête' : (report.findingCount > 0 ? `${report.findingCount} adaptation(s)` : 'Code prêt pour les essais'), report.readyForAutomaticSwitch)}</div>
       <div class="maintenance-file-list">${topFindings.map(item => `<div class="maintenance-file-row"><span><strong>${escapeHtml(item.file)} · ${escapeHtml(item.key)}</strong><small>${escapeHtml(item.count)} occurrence(s) · ${escapeHtml(item.detail)}</small></span></div>`).join('') || '<p class="muted">Aucune syntaxe spécifique à SQLite détectée.</p>'}</div>
       <p class="founder-console-note"><strong>Aucune bascule automatique</strong><span>La migration ne sera possible qu’après import de préproduction, comparaison des données et plan de retour arrière.</span></p>
     </section>`;
