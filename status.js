@@ -111,8 +111,8 @@
     renderList('[data-status-incidents]', status.incidents, t('noIncidents'));
     renderList('[data-status-maintenance]', status.maintenance ? [status.maintenance] : [], t('noMaintenance'));
     const componentLabels = currentLanguage() === 'en'
-      ? { dashboard: 'Dashboard', discord: 'Discord', sqlite: 'Database', oauth: 'Discord login', objectStorage: 'Main backup', secondaryBackup: 'Secondary backup', jobs: 'Automatic tasks' }
-      : { dashboard: 'Dashboard', discord: 'Discord', sqlite: 'Base de données', oauth: 'Connexion Discord', objectStorage: 'Sauvegarde principale', secondaryBackup: 'Sauvegarde secondaire', jobs: 'Tâches automatiques' };
+      ? { dashboard: 'Dashboard', discord: 'Discord', database: 'Database', oauth: 'Discord login', objectStorage: 'Main backup', secondaryBackup: 'Secondary backup', jobs: 'Automatic tasks' }
+      : { dashboard: 'Dashboard', discord: 'Discord', database: 'Base de données', oauth: 'Connexion Discord', objectStorage: 'Sauvegarde principale', secondaryBackup: 'Sauvegarde secondaire', jobs: 'Tâches automatiques' };
     const components = status.components?.components || {};
     const host = document.querySelector('[data-status-components]');
     if (host) {

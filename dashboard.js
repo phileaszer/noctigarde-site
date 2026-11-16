@@ -5456,7 +5456,7 @@ function founderRuntimePanel(overview) {
   const componentLabels = {
     dashboard: 'Dashboard',
     discord: 'Discord',
-    sqlite: 'Base de données',
+    database: 'Base de données',
     oauth: 'Connexion Discord',
     objectStorage: 'Sauvegarde principale',
     secondaryBackup: 'Sauvegarde secondaire',
