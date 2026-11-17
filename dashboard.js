@@ -5539,7 +5539,13 @@ function founderPrivacyPanel(overview) {
 function criticalActionsPanel(overview) {
   const actions = (overview?.criticalActions || []).filter((item) => item.actionType !== 'premium-access');
   if (!actions.length) return '';
-  const labels = { 'restore-backup': 'Restauration', 'official-update': 'Annonce globale', 'reset-guild': 'Remise à zéro' };
+  const labels = {
+    'restore-backup': 'Restauration',
+    'official-update': 'Annonce globale',
+    'official-update-edit': 'Modification globale',
+    'official-update-delete': 'Retrait global',
+    'reset-guild': 'Remise à zéro'
+  };
   return `
     <section class="founder-storage-panel" aria-label="Validations critiques">
       <div class="panel-heading row-heading"><div><p class="eyebrow">Double validation</p><h3>Actions critiques</h3><p class="muted">Le demandeur ne peut jamais valider sa propre action.</p></div></div>
@@ -5568,6 +5574,7 @@ function founderOfficialUpdatePanel(overview) {
         <label><input name="includeSubscribers" type="checkbox"><span>Diffuser aux serveurs ayant configuré un salon de nouveautés</span></label>
         <button class="button" type="submit">Soumettre à validation</button>
       </form>
+      ${window.NoctigardeOfficialUpdates?.renderManagement(overview.officialUpdates) || ''}
     </section>
   `;
 }
@@ -6249,10 +6256,10 @@ async function updateFeatureFlag(data, button = null) {
   }
 }
 
-async function submitOfficialUpdate(data, button = null) {
+async function submitOfficialUpdate(data, button = null, manage = false) {
   setLoading(button, true);
   try {
-    const payload = await api('/api/creator/official-update', {
+    const payload = await api(`/api/creator/official-update${manage ? '/manage' : ''}`, {
       method: 'POST',
       body: JSON.stringify({ ...data, includeSubscribers: Boolean(data.includeSubscribers), mfaCode: founderMfaCode })
     });
@@ -6815,6 +6822,8 @@ function attachDashboardHandlers() {
     const form = event.currentTarget;
     submitOfficialUpdate(formData(form), $('button[type="submit"]', form));
   });
+
+  window.NoctigardeOfficialUpdates?.bindManagement((data, button) => submitOfficialUpdate(data, button, true));
 
   $('[data-founder-guild-search]')?.addEventListener('input', (event) => {
     const query = String(event.currentTarget.value || '').trim().toLocaleLowerCase('fr');
