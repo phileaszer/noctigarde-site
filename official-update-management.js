@@ -22,7 +22,7 @@
               <textarea name="bodyFr" maxlength="4000" placeholder="Message français" required>${escapeHtml(item.bodyFr)}</textarea>
               <input name="titleEn" maxlength="256" value="${escapeHtml(item.titleEn || '')}" placeholder="Titre anglais facultatif">
               <textarea name="bodyEn" maxlength="4000" placeholder="Message anglais facultatif">${escapeHtml(item.bodyEn || '')}</textarea>
-              <div class="inline-action-row"><button class="button button-small" type="submit">Soumettre la modification</button><button class="button button-small button-ghost" type="button" data-founder-official-update-delete data-update-id="${escapeHtml(item.id)}">Retirer partout</button></div>
+              <div class="inline-action-row"><button class="button button-small" type="submit">Appliquer la modification</button><button class="button button-small button-ghost" type="button" data-founder-official-update-delete data-update-id="${escapeHtml(item.id)}">Retirer partout</button></div>
             </form>
           </details>
         `).join('') : '<p class="muted">Aucune annonce publique.</p>'}

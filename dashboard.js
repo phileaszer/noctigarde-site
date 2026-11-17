@@ -5565,14 +5565,14 @@ function founderOfficialUpdatePanel(overview) {
   if (!overview?.access?.isFounder) return '';
   return `
     <section class="founder-storage-panel" aria-label="Annonce globale Noctigarde">
-      <div class="panel-heading"><p class="eyebrow">Publication protégée</p><h3>Annonce globale</h3><p class="muted">La publication reste en attente jusqu’à la validation d’une autre personne autorisée.</p></div>
+      <div class="panel-heading"><p class="eyebrow">Publication protégée</p><h3>Annonce globale</h3><p class="muted">Tes annonces sont appliquées immédiatement après la vérification MFA. La double validation reste obligatoire pour les autres personnes.</p></div>
       <form data-founder-official-update class="operation-form-grid">
         <input name="titleFr" maxlength="256" placeholder="Titre français" required>
         <textarea name="bodyFr" maxlength="4000" placeholder="Message français" required></textarea>
         <input name="titleEn" maxlength="256" placeholder="Titre anglais facultatif">
         <textarea name="bodyEn" maxlength="4000" placeholder="Message anglais facultatif"></textarea>
         <label><input name="includeSubscribers" type="checkbox"><span>Diffuser aux serveurs ayant configuré un salon de nouveautés</span></label>
-        <button class="button" type="submit">Soumettre à validation</button>
+        <button class="button" type="submit">Publier maintenant</button>
       </form>
       ${window.NoctigardeOfficialUpdates?.renderManagement(overview.officialUpdates) || ''}
     </section>
