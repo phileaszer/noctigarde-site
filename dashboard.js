@@ -5438,7 +5438,14 @@ function founderSecurityPanel(overview) {
       ` : `
         <button class="button button-small" type="button" data-founder-mfa-setup>Préparer l’authentificateur</button>
         ${founderMfaSetup ? `
-          <div class="founder-console-note"><strong>Secret à enregistrer maintenant</strong><span><code>${escapeHtml(founderMfaSetup.secret)}</code></span><small>Ajoute-le dans ton application d’authentification, puis garde les codes de secours hors du site.</small></div>
+          <div class="founder-mfa-setup">
+            <img class="founder-mfa-qr" src="${escapeHtml(founderMfaSetup.qrCodeDataUrl)}" alt="QR code pour ajouter Noctigarde à l’application d’authentification">
+            <div>
+              <div class="founder-console-note"><strong>Clé à enregistrer maintenant</strong><span><code>${escapeHtml(founderMfaSetup.secret)}</code></span></div>
+              <button class="button button-small button-ghost" type="button" data-founder-mfa-copy data-founder-mfa-secret="${escapeHtml(founderMfaSetup.secret)}">Copier la clé</button>
+              <p class="muted">Scanne le QR code ou copie la clé dans ton application, puis saisis le code à 6 chiffres ci-dessous.</p>
+            </div>
+          </div>
           <div class="maintenance-file-list">${(founderMfaSetup.recoveryCodes || []).map(code => `<code>${escapeHtml(code)}</code>`).join(' ')}</div>
         ` : status.setupPending ? '<p class="muted">Une configuration est en attente. Tu peux la recommencer pour afficher un nouveau secret.</p>' : ''}
         <form data-founder-mfa-form><input type="hidden" name="action" value="enable"><input name="code" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Code à 6 chiffres" required><button class="button button-small" type="submit">Activer</button></form>
@@ -6808,6 +6815,16 @@ function attachDashboardHandlers() {
 
   $('[data-founder-mfa-setup]')?.addEventListener('click', (event) => {
     manageFounderMfa({ action: 'setup' }, event.currentTarget);
+  });
+
+  $('[data-founder-mfa-copy]')?.addEventListener('click', async (event) => {
+    const secret = String(event.currentTarget.dataset.founderMfaSecret || '');
+    try {
+      await copyTextForSpreadsheet(secret);
+      toast('Clé copiée.');
+    } catch (error) {
+      toast('Impossible de copier la clé automatiquement.', 'error');
+    }
   });
 
   $$('[data-founder-mfa-form]').forEach((form) => {
