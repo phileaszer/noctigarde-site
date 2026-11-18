@@ -5428,7 +5428,7 @@ function founderSecurityPanel(overview) {
   return `
     <section class="founder-storage-panel" aria-label="Double sécurité fondatrice">
       <div class="panel-heading row-heading">
-        <div><p class="eyebrow">Identité renforcée</p><h3>Double sécurité fondatrice</h3><p class="muted">Les restaurations, annonces globales et accès staff exigent cette vérification.</p></div>
+        <div><p class="eyebrow">Identité renforcée</p><h3>Double sécurité fondatrice</h3><p class="muted">Les restaurations, accès staff et interrupteurs d’urgence exigent cette vérification.</p></div>
         ${statusBadge(status.enabled ? 'Active' : 'À configurer', Boolean(status.enabled))}
       </div>
       ${status.enabled ? `
@@ -5572,7 +5572,7 @@ function founderOfficialUpdatePanel(overview) {
   if (!overview?.access?.isFounder) return '';
   return `
     <section class="founder-storage-panel" aria-label="Annonce globale Noctigarde">
-      <div class="panel-heading"><p class="eyebrow">Publication protégée</p><h3>Annonce globale</h3><p class="muted">Tes annonces sont appliquées immédiatement après la vérification MFA. La double validation reste obligatoire pour les autres personnes.</p></div>
+      <div class="panel-heading"><p class="eyebrow">Publication directe</p><h3>Annonce globale</h3><p class="muted">Tes annonces sont publiées directement avec ta connexion fondatrice. Aucun code Authenticator n’est demandé. La double validation reste obligatoire pour les autres personnes.</p></div>
       <form data-founder-official-update class="operation-form-grid">
         <input name="titleFr" maxlength="256" placeholder="Titre français" required>
         <textarea name="bodyFr" maxlength="4000" placeholder="Message français" required></textarea>
