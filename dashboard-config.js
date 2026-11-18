@@ -304,6 +304,17 @@ const DASHBOARD_TABS = [
   }
 ];
 
+const COMMUNITY_HELP_ITEMS = [
+  ['Installation', 'Configurer Noctigarde', 'Choisis le profil, le rôle de service, le salon des registres, les responsables et le salon des nouveautés.'],
+  ['Service', 'Publier le panneau', 'Ouvre Configuration ou Service, choisis le salon puis publie le panneau de prise de service.'],
+  ['Tickets', 'Recevoir les demandes', 'Configure les responsables par type, puis publie le bureau d’accueil dans un salon public.'],
+  ['Modération', 'Protéger le serveur', 'Vérifie d’abord le diagnostic des permissions, puis active seulement les règles utiles.'],
+  ['Recrutement', 'Ouvrir une campagne', 'Crée un formulaire ici. Les membres répondront depuis leur espace personnel.'],
+  ['Planning', 'Préparer une équipe', 'Crée un créneau avec une capacité et un rappel. Les réponses sont visibles en direct.'],
+  ['Suggestions', 'Consulter les idées', 'Les membres proposent et votent depuis leur espace. Le staff décide avant toute publication.'],
+  ['Panneaux', 'Adapter l’identité', 'Personnalise les textes, la couleur et l’image, puis republie le panneau concerné.']
+];
+
 const DASHBOARD_SUBTABS = {
   overview: [
     { id: 'summary', label: 'Synthèse', description: 'État du jour et notifications', selectors: ['.today-grid', '.notification-center'] },

@@ -5778,16 +5778,6 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
       </form>` : ''}
       ${item.status === 'accepted' ? `<form data-action-form="community-publish-suggestion" class="inline-action-row"><input type="hidden" name="suggestionId" value="${escapeHtml(item.id)}"><select name="channelId" required>${channelOptions}</select><button class="button button-small" type="submit">Publier sur Discord</button></form>` : ''}
     </article>`).join('');
-  const helpItems = [
-    ['Installation', 'Configurer Noctigarde', 'Choisis le profil, le rôle de service, le salon des registres, les responsables et le salon des nouveautés.'],
-    ['Service', 'Publier le panneau', 'Ouvre Configuration ou Service, choisis le salon puis publie le panneau de prise de service.'],
-    ['Tickets', 'Recevoir les demandes', 'Configure les responsables par type, puis publie le bureau d’accueil dans un salon public.'],
-    ['Modération', 'Protéger le serveur', 'Vérifie d’abord le diagnostic des permissions, puis active seulement les règles utiles.'],
-    ['Recrutement', 'Ouvrir une campagne', 'Crée un formulaire ici. Les membres répondront depuis leur espace personnel.'],
-    ['Planning', 'Préparer une équipe', 'Crée un créneau avec une capacité et un rappel. Les réponses sont visibles en direct.'],
-    ['Suggestions', 'Consulter les idées', 'Les membres proposent et votent depuis leur espace. Le staff décide avant toute publication.'],
-    ['Panneaux', 'Adapter l’identité', 'Personnalise les textes, la couleur et l’image, puis republie le panneau concerné.']
-  ];
   const panelForm = (type, label, theme = {}) => {
     const buttonFields = type === 'service'
       ? [['Start', 'Prendre service'], ['End', 'Fin service'], ['Hours', 'Mes heures'], ['Active', 'En service']]
@@ -5833,7 +5823,7 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
         <label><span>Début</span><input type="datetime-local" name="startsAt" required></label><label><span>Fin</span><input type="datetime-local" name="endsAt" required></label>
         <label><span>Places</span><input type="number" name="capacity" min="0" max="500" value="0"><small>0 signifie sans limite.</small></label>
         <label><span>Rappel</span><select name="reminderMinutes"><option value="30">30 minutes avant</option><option value="60" selected>1 heure avant</option><option value="1440">1 jour avant</option></select></label>
-        <label><span>Rôle à prévenir</span><select name="roleId">${roleOptions}</select></label><label><span>Salon du rappel</span><select name="channelId">${channelOptions}</select></label>
+        <label><span>Rôle à prévenir</span><select name="roleId">${roleOptions}</select></label><label><span>Salon des annonces et rappels</span><select name="channelId" required>${channelOptions}</select><small>L’annonce, le rappel et le lancement seront publiés ici.</small></label>
         <label class="community-wide-field"><span>Consignes</span><textarea name="description" maxlength="1000"></textarea></label><button class="button" type="submit">Créer le créneau</button>
       </form>
       <div class="community-record-list">${shiftRows || emptyPanel('Aucun créneau enregistré. Le planning reste disponible.')}</div>
@@ -5844,7 +5834,7 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
     <section class="community-section community-analytics"><div class="community-section-heading"><div><span>Lecture d’activité</span><h3>Statistiques responsables</h3></div><small>30 derniers jours</small></div><div class="community-analytics-grid">
       <article><span>Services</span><strong>${escapeHtml(analytics.services30d || 0)}</strong><small>${escapeHtml(analytics.serviceUsers30d || 0)} membre(s)</small></article><article><span>Tickets ouverts</span><strong>${escapeHtml(analytics.ticketsOpen || 0)}</strong><small>${escapeHtml(analytics.tickets30d || 0)} créés en 30 jours</small></article><article><span>Modération</span><strong>${escapeHtml(analytics.moderation30d || 0)}</strong><small>${escapeHtml(analytics.automod24h || 0)} détection(s) aujourd’hui</small></article><article><span>Première réponse</span><strong>${analytics.averageFirstResponseMinutes == null ? '—' : `${escapeHtml(analytics.averageFirstResponseMinutes)} min`}</strong><small>Moyenne des tickets répondus</small></article>
     </div><div class="community-two-column"><article class="community-insight"><h4>Heures les plus actives</h4>${analytics.busiestHours?.length ? analytics.busiestHours.map(item => `<p><span>${String(item.hour).padStart(2, '0')} h</span><strong>${escapeHtml(item.count)} session(s)</strong></p>`).join('') : emptyPanel('Pas encore assez de services.')}</article><article class="community-insight"><h4>Charge des responsables</h4>${analytics.staffLoad?.length ? analytics.staffLoad.map(item => `<p><span>${item.userId === 'unassigned' ? 'Sans référent' : `<code>${escapeHtml(item.userId)}</code>`}</span><strong>${escapeHtml(item.count)} ticket(s)</strong></p>`).join('') : emptyPanel('Aucun ticket en attente.')}</article></div></section>
-    <section class="community-section community-help"><div class="community-section-heading"><div><span>Centre d’aide</span><h3>Trouver rapidement un réglage</h3></div></div><label class="community-help-search"><span>Que veux-tu faire ?</span><input type="search" data-community-help-search placeholder="Ex. recrutement, panneau, sanction..."></label><div class="community-help-grid">${helpItems.map(([category, title, detail]) => `<article data-community-help-item data-search="${escapeHtml(`${category} ${title} ${detail}`.toLocaleLowerCase('fr'))}"><span>${escapeHtml(category)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></article>`).join('')}</div><p class="member-empty" data-community-help-empty hidden>Aucun résultat. Essaie un mot plus simple.</p></section>
+    <section class="community-section community-help"><div class="community-section-heading"><div><span>Centre d’aide</span><h3>Trouver rapidement un réglage</h3></div></div><label class="community-help-search"><span>Que veux-tu faire ?</span><input type="search" data-community-help-search placeholder="Ex. recrutement, panneau, sanction..."></label><div class="community-help-grid">${COMMUNITY_HELP_ITEMS.map(([category, title, detail]) => `<article data-community-help-item data-search="${escapeHtml(`${category} ${title} ${detail}`.toLocaleLowerCase('fr'))}"><span>${escapeHtml(category)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></article>`).join('')}</div><p class="member-empty" data-community-help-empty hidden>Aucun résultat. Essaie un mot plus simple.</p></section>
   </section>`;
 }
 

@@ -2884,6 +2884,8 @@
     "Crée un créneau avec une capacité et un rappel. Les réponses sont visibles en direct.": "Create a shift with capacity and a reminder. Responses update live.",
     "Crée un formulaire ici. Les membres répondront depuis leur espace personnel.": "Create a form here. Members will answer from their personal area.",
     "Créer le créneau": "Create shift",
+    "Salon des annonces et rappels": "Announcement and reminder channel",
+    "L’annonce, le rappel et le lancement seront publiés ici.": "The announcement, reminder, and start message will be posted here.",
     "Créneau #…": "Shift #…",
     "Créneaux et disponibilités": "Shifts and availability",
     "Créneaux, réponses et absences": "Shifts, responses, and absences",
