@@ -3661,6 +3661,10 @@ code {
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
+.dashboard-nav-item[data-dashboard-tab="community"] {
+  grid-template-columns: minmax(96px, 104px) minmax(0, 1fr);
+}
+
 .dashboard-nav-item:hover {
   color: var(--text);
   border-color: rgba(234, 242, 255, 0.14);
@@ -3746,6 +3750,10 @@ code {
     grid-template-columns: minmax(62px, 76px) minmax(0, 1fr);
     min-height: 62px;
     padding: 8px 9px;
+  }
+
+  .dashboard-nav-item[data-dashboard-tab="community"] {
+    grid-template-columns: minmax(88px, 96px) minmax(0, 1fr);
   }
 
   .dashboard-nav-kicker {
