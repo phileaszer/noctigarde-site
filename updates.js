@@ -62,6 +62,28 @@
     return `nouveaute-${String(key).toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
   }
 
+  function appendInlineMarkup(target, value) {
+    const source = String(value || '');
+    const tokenPattern = /(\*\*|__|`)(.+?)\1/g;
+    let cursor = 0;
+    let match;
+
+    while ((match = tokenPattern.exec(source))) {
+      if (match.index > cursor) target.append(document.createTextNode(source.slice(cursor, match.index)));
+      const element = document.createElement(match[1] === '`' ? 'code' : 'strong');
+      element.textContent = match[2];
+      target.append(element);
+      cursor = tokenPattern.lastIndex;
+    }
+
+    if (cursor < source.length) target.append(document.createTextNode(source.slice(cursor)));
+  }
+
+  function setInlineMarkup(target, value) {
+    target.replaceChildren();
+    appendInlineMarkup(target, value);
+  }
+
   function renderUpdateBody(target, value, language) {
     const lines = String(value || '').replace(/\r/g, '').split('\n');
     const hasSections = lines.some((line) => /^#{2,3}\s+/.test(line.trim()));
@@ -78,7 +100,7 @@
         const line = rawLine.trim();
         if (!line) return;
         const entry = document.createElement('li');
-        entry.textContent = line;
+        setInlineMarkup(entry, line);
         list.append(entry);
       });
       section.append(title, list);
@@ -96,7 +118,7 @@
         const section = document.createElement('section');
         const title = document.createElement('h3');
         section.className = 'official-update-section';
-        title.textContent = heading[1];
+        setInlineMarkup(title, heading[1]);
         sectionList = document.createElement('ul');
         sectionList.className = 'official-update-section-list';
         section.append(title, sectionList);
@@ -113,7 +135,7 @@
           lastEntry.append(nested);
         }
         const entry = document.createElement('li');
-        entry.textContent = detail[1];
+        setInlineMarkup(entry, detail[1]);
         (nested || sectionList).append(entry);
         return;
       }
@@ -125,14 +147,14 @@
         title.textContent = language === 'en' ? 'Summary' : 'En bref';
         sectionList = document.createElement('ul');
         sectionList.className = 'official-update-section-list';
-        entry.textContent = line;
+        setInlineMarkup(entry, line);
         sectionList.append(entry);
         section.append(title, sectionList);
         target.append(section);
         lastEntry = entry;
       } else {
         lastEntry = document.createElement('li');
-        lastEntry.textContent = line;
+        setInlineMarkup(lastEntry, line);
         sectionList.append(lastEntry);
       }
     });
@@ -152,9 +174,16 @@
     const url = new URL(window.location.href);
     url.search = '';
     url.hash = article.id;
+    let copied = false;
     try {
-      await navigator.clipboard.writeText(url.toString());
+      if (typeof navigator.clipboard?.writeText === 'function') {
+        await navigator.clipboard.writeText(url.toString());
+        copied = true;
+      }
     } catch (error) {
+      // The selection fallback also works when clipboard access is denied.
+    }
+    if (!copied) {
       const field = document.createElement('textarea');
       field.value = url.toString();
       field.setAttribute('readonly', '');
@@ -162,13 +191,19 @@
       field.style.opacity = '0';
       document.body.append(field);
       field.select();
-      document.execCommand('copy');
+      try {
+        copied = typeof document.execCommand === 'function' && document.execCommand('copy');
+      } catch (error) {
+        copied = false;
+      }
       field.remove();
     }
-    button.textContent = language === 'en' ? 'Link copied' : 'Lien copié';
+    button.textContent = copied
+      ? (language === 'en' ? 'Link copied' : 'Lien copié')
+      : (language === 'en' ? 'Copy unavailable' : 'Copie indisponible');
     window.setTimeout(() => {
       button.textContent = language === 'en' ? 'Copy link' : 'Copier le lien';
-    }, 1800);
+    }, 3000);
   }
 
   function createUpdate(update, language, index) {
@@ -210,6 +245,7 @@
     actions.className = 'official-update-actions';
     share.className = 'official-update-action';
     share.type = 'button';
+    share.dataset.i18nIgnore = 'true';
     share.textContent = language === 'en' ? 'Copy link' : 'Copier le lien';
     share.addEventListener('click', () => copyUpdateLink(article, share, language));
     actions.append(share);
@@ -231,6 +267,7 @@
       const shouldOpen = window.location.hash === `#${article.id}` || Boolean(filters.query);
       toggle.className = 'official-update-action official-update-toggle';
       toggle.type = 'button';
+      toggle.dataset.i18nIgnore = 'true';
       toggle.setAttribute('aria-controls', body.id);
       toggle.addEventListener('click', () => setExpanded(article, body, toggle, body.hidden, language));
       actions.prepend(toggle);

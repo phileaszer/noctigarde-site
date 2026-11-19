@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'noctigarde-shell-20261113-2';
+const CACHE_NAME = 'noctigarde-shell-20261119-2';
 const SHELL = [
   './',
   './index.html',
@@ -8,8 +8,12 @@ const SHELL = [
   './membre.html',
   './styles.css',
   './theme.js',
+  './i18n-data.js',
+  './i18n-data-extra.js',
+  './i18n-data-more.js',
   './i18n.js',
   './dashboard-config.js',
+  './dashboard-errors.js',
   './auth.js',
   './assets/noctigarde-mark.png'
 ];

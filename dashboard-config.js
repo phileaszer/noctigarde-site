@@ -392,6 +392,7 @@ window.NoctigardeDashboardConfig = Object.freeze({
     AUTOMOD_ACTION_LABELS,
     AUTOMOD_RULE_LABELS,
     DASHBOARD_TABS,
+    COMMUNITY_HELP_ITEMS,
     DASHBOARD_SUBTABS
 });
 })();
