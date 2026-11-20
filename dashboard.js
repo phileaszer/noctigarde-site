@@ -5551,6 +5551,11 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
         <button class="button button-small" type="submit">Mettre à jour</button>
       </form>
     </article>`).join('');
+  const recruitmentFormRows = recruitment.forms.map((form) => {
+    const reviewChannel = resolveChannel(state, form.reviewChannelId);
+    const reviewChannelOptions = optionList(state.channels || [], form.reviewChannelId, 'Choisir un salon');
+    return `<article class="community-compact-record"><div><strong>${escapeHtml(form.title)}</strong><small>${escapeHtml(form.questions.length)} question(s) · ${form.open ? 'Ouvert' : 'Fermé'}${reviewChannel ? ` · #${escapeHtml(reviewChannel.name)}` : ''}</small></div><div class="inline-action-row"><form data-action-form="community-publish-recruitment-form" class="inline-action-row"><input type="hidden" name="formId" value="${escapeHtml(form.id)}"><select name="channelId" required>${reviewChannelOptions}</select><button class="button button-small" type="submit">Publier sur Discord</button></form><form data-action-form="community-toggle-recruitment-form"><input type="hidden" name="formId" value="${escapeHtml(form.id)}"><input type="hidden" name="open" value="${form.open ? 'false' : 'true'}"><button class="button button-small button-ghost" type="submit">${form.open ? 'Fermer' : 'Rouvrir'}</button></form></div></article>`;
+  }).join('');
   const planningNow = Date.now();
   const upcomingShiftCount = planning.shifts.filter(shift => shift.status === 'scheduled' && new Date(shift.endsAt).getTime() >= planningNow).length;
   const shiftRows = planning.shifts.map((shift) => {
@@ -5614,9 +5619,9 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
         <label><span>Nom du recrutement</span><input name="title" maxlength="100" required placeholder="Ex. Recrutement modération"></label>
         <label><span>Présentation</span><textarea name="description" maxlength="1000" placeholder="Explique le rôle recherché"></textarea></label>
         <label><span>Questions, une par ligne</span><textarea name="questions" required placeholder="Pourquoi souhaites-tu nous rejoindre ?&#10;Quelles sont tes disponibilités ?"></textarea></label>
-        <div class="form-row"><label><span>Rôle après acceptation</span><select name="targetRoleId">${roleOptions}</select></label><label><span>Salon de suivi</span><select name="reviewChannelId">${channelOptions}</select></label></div>
+        <div class="form-row"><label><span>Rôle après acceptation</span><select name="targetRoleId">${roleOptions}</select></label><label><span>Salon de suivi</span><select name="reviewChannelId" required>${channelOptions}</select><small>L’ouverture du recrutement et les nouvelles candidatures seront signalées ici.</small></label></div>
         <button class="button" type="submit">Ouvrir le recrutement</button>
-      </form><div class="community-record-list">${recruitment.forms.length ? recruitment.forms.map(form => `<article class="community-compact-record"><div><strong>${escapeHtml(form.title)}</strong><small>${escapeHtml(form.questions.length)} question(s) · ${form.open ? 'Ouvert' : 'Fermé'}</small></div><form data-action-form="community-toggle-recruitment-form"><input type="hidden" name="formId" value="${escapeHtml(form.id)}"><input type="hidden" name="open" value="${form.open ? 'false' : 'true'}"><button class="button button-small button-ghost" type="submit">${form.open ? 'Fermer' : 'Rouvrir'}</button></form></article>`).join('') : emptyPanel('Aucun recrutement créé.')}</div></div>
+      </form><div class="community-record-list">${recruitmentFormRows || emptyPanel('Aucun recrutement créé.')}</div></div>
       <div class="community-record-list community-applications-list">${applicationRows || emptyPanel('Aucune candidature reçue.')}</div>
     </section>
     <section class="community-section community-planning">
