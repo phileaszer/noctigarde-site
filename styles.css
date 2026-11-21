@@ -9248,9 +9248,23 @@ html[lang="en"] .language-fr {
   line-height: 1.5;
 }
 
+.community-panel-editor > .panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.community-panel-editor > .panel-heading > div {
+  min-width: 0;
+}
+
 .panel-color-preview {
+  display: block;
+  flex: 0 0 34px;
   width: 34px;
   height: 34px;
+  box-sizing: border-box;
   border: 5px solid rgba(255, 255, 255, 0.08);
   background: var(--panel-preview-color, var(--cyan));
 }
