@@ -5292,13 +5292,20 @@ function founderFeatureFlagsPanel(overview) {
 function founderDatabasePortabilityPanel(overview) {
   if (!overview?.access?.isFounder || !overview.databasePortability) return '';
   const report = overview.databasePortability;
+  const postgresqlActive = report.engine === 'postgresql';
+  const migrationValidated = Boolean(postgresqlActive
+    && report.migrationStatus?.rowCountsMatched
+    && report.migrationStatus?.hashesMatched
+    && report.migrationStatus?.rollbackBackupVerified
+    && report.migrationStatus?.independentSnapshotVerification
+    && report.migrationStatus?.postgresqlRuntimeValidated);
   const topFindings = (report.findings || []).slice(0, 8);
   return `
-    <section class="founder-storage-panel" aria-label="Préparation PostgreSQL">
-      <div class="panel-heading row-heading"><div><p class="eyebrow">Montée en charge</p><h3>Préparation PostgreSQL</h3><p class="muted">Noctigarde reste sur SQLite avec une seule instance. Ce relevé suit les validations nécessaires avant une future bascule.</p></div>${statusBadge(report.readyForAutomaticSwitch ? 'Prête' : (report.findingCount > 0 ? `${report.findingCount} adaptation(s)` : 'Code prêt pour les essais'), report.readyForAutomaticSwitch)}</div>
+    <section class="founder-storage-panel" aria-label="${postgresqlActive ? 'PostgreSQL en production' : 'Préparation PostgreSQL'}">
+      <div class="panel-heading row-heading"><div><p class="eyebrow">Montée en charge</p><h3>${postgresqlActive ? 'PostgreSQL en production' : 'Préparation PostgreSQL'}</h3><p class="muted">${postgresqlActive ? 'Noctigarde utilise désormais PostgreSQL en production. Ce relevé conserve les preuves de la migration et du retour arrière.' : 'Noctigarde utilise SQLite dans cet environnement. Ce relevé suit les validations nécessaires avant une future bascule.'}</p></div>${postgresqlActive ? statusBadge(migrationValidated ? 'Migration validée' : 'PostgreSQL actif', migrationValidated) : statusBadge(report.readyForAutomaticSwitch ? 'Prête' : (report.findingCount > 0 ? `${report.findingCount} adaptation(s)` : 'Code prêt pour les essais'), report.readyForAutomaticSwitch)}</div>
       <div class="maintenance-file-list">${topFindings.map(item => `<div class="maintenance-file-row"><span><strong>${escapeHtml(item.file)} · ${escapeHtml(item.key)}</strong><small>${escapeHtml(item.count)} occurrence(s) · ${escapeHtml(item.detail)}</small></span></div>`).join('') || '<p class="muted">Aucune syntaxe spécifique à SQLite détectée.</p>'}</div>
-      ${report.migrationStatus ? `<div class="dashboard-metrics dashboard-kpis founder-premium-kpis"><article class="dashboard-kpi"><span>Copie isolée</span><strong>${escapeHtml(report.migrationStatus.schema || 'Non vérifiée')}</strong><small>${escapeHtml(report.migrationStatus.tableCount)} tables</small></article><article class="dashboard-kpi"><span>Données comparées</span><strong>${escapeHtml(report.migrationStatus.rowCount)} lignes</strong><small>${report.migrationStatus.independentSnapshotVerification ? 'Vérification indépendante réussie' : 'Vérification à confirmer'}</small></article></div>` : ''}
-      <p class="founder-console-note"><strong>Aucune bascule automatique</strong><span>La migration ne sera possible qu’après import de préproduction, comparaison des données et plan de retour arrière.</span></p>
+      ${report.migrationStatus ? `<div class="dashboard-metrics dashboard-kpis founder-premium-kpis"><article class="dashboard-kpi"><span>${postgresqlActive ? 'Schéma actif' : 'Copie isolée'}</span><strong>${escapeHtml(report.migrationStatus.schema || 'Non vérifiée')}</strong><small>${escapeHtml(report.migrationStatus.tableCount)} tables</small></article><article class="dashboard-kpi"><span>Données comparées</span><strong>${escapeHtml(report.migrationStatus.rowCount)} lignes</strong><small>${report.migrationStatus.independentSnapshotVerification ? 'Vérification indépendante réussie' : 'Vérification à confirmer'}</small></article>${postgresqlActive ? `<article class="dashboard-kpi"><span>Retour arrière</span><strong>${report.migrationStatus.rollbackBackupVerified ? 'Vérifié' : 'À vérifier'}</strong><small>Sauvegarde SQLite conservée</small></article>` : ''}</div>` : ''}
+      <p class="founder-console-note"><strong>${postgresqlActive ? (migrationValidated ? 'Migration validée' : 'PostgreSQL actif') : 'Aucune bascule automatique'}</strong><span>${postgresqlActive ? (migrationValidated ? 'La copie de préproduction, les lignes, les empreintes et la sauvegarde de retour arrière ont été vérifiées avant la bascule.' : 'PostgreSQL est actif, mais certaines preuves de migration restent à contrôler.') : 'La migration ne sera possible qu’après import de préproduction, comparaison des données et plan de retour arrière.'}</span></p>
     </section>`;
 }
 
