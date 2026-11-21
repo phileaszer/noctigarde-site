@@ -9371,6 +9371,12 @@ html[lang="en"] .language-fr {
   color: var(--muted);
 }
 
+.member-community-item.is-deep-linked {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 9%, rgba(255, 255, 255, 0.025));
+  box-shadow: inset 3px 0 0 var(--cyan);
+}
+
 .member-absence-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 12px;

@@ -2,8 +2,12 @@
   const content = document.querySelector('[data-member-content]');
   const userCard = document.querySelector('[data-member-user]');
   const toasts = document.querySelector('[data-toasts]');
+  const pageParams = new URLSearchParams(window.location.search);
+  const requestedGuildId = /^\d{17,20}$/.test(pageParams.get('guild') || '') ? pageParams.get('guild') : null;
+  const requestedRecruitmentId = /^\d+$/.test(pageParams.get('recruitment') || '') ? pageParams.get('recruitment') : null;
   let csrfToken = null;
   let portal = null;
+  let deepLinkFocused = false;
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -36,7 +40,11 @@
       ...options
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `Erreur ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(payload.error || `Erreur ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     return payload;
   }
 
@@ -89,7 +97,7 @@
       available: 'Disponible', unavailable: 'Indisponible', maybe: 'Peut-être', reviewingSuggestion: 'En étude', published: 'Publiée'
     };
     const recruitmentForms = recruitment.forms.filter(form => !appliedFormIds.has(Number(form.id))).map(form => `
-      <details class="member-community-item">
+      <details class="member-community-item" data-recruitment-form-id="${escapeHtml(form.id)}">
         <summary><span><strong>${escapeHtml(form.title)}</strong><small>${escapeHtml(form.description || 'Recrutement ouvert')}</small></span><em>${escapeHtml(form.questions.length)} question(s)</em></summary>
         <form data-community-action="apply" data-guild-id="${escapeHtml(item.guild.id)}" data-form-id="${escapeHtml(form.id)}" class="member-community-form">
           ${form.questions.map((question, index) => `<label><span>${escapeHtml(question.label)}</span><textarea data-recruitment-answer="${index}" maxlength="1200" ${question.required ? 'required' : ''}></textarea></label>`).join('')}
@@ -176,7 +184,7 @@
       ['moderationEnabled', 'Modération', 'Avertissement et décision du staff']
     ];
     return `
-      <section class="dashboard-panel member-guild-panel">
+      <section class="dashboard-panel member-guild-panel" data-member-guild-id="${escapeHtml(item.guild.id)}">
         <div class="member-guild-heading">
           <div class="member-server-identity">${icon ? `<img src="${escapeHtml(icon)}" alt="">` : '<span class="guild-fallback">S</span>'}<div><p class="eyebrow">Serveur Discord</p><h2>${escapeHtml(item.guild.name)}</h2><p>Ton activité et tes informations personnelles sur ce serveur.</p></div></div>
           <span class="member-sync-state"><i aria-hidden="true"></i>Données à jour</span>
@@ -215,6 +223,7 @@
     content.innerHTML = privacyPanel + (guilds.length
       ? guilds.map(renderGuild).join('')
       : '<div class="empty-state"><img src="assets/noctigarde-mark.png" alt=""><h2>Aucun registre disponible</h2><p>Ton compte Discord n’est membre d’aucun serveur où Noctigarde est installé.</p></div>');
+    focusRequestedRecruitment();
     document.querySelectorAll('[data-preferences]').forEach(form => {
       form.addEventListener('submit', async event => {
         event.preventDefault();
@@ -308,6 +317,21 @@
     });
   }
 
+  function focusRequestedRecruitment() {
+    if (deepLinkFocused || !requestedGuildId) return;
+    const guildPanel = document.querySelector(`[data-member-guild-id="${requestedGuildId}"]`);
+    if (!guildPanel) return;
+
+    const recruitment = requestedRecruitmentId
+      ? guildPanel.querySelector(`[data-recruitment-form-id="${requestedRecruitmentId}"]`)
+      : null;
+    const target = recruitment || guildPanel;
+    if (recruitment) recruitment.open = true;
+    target.classList.add('is-deep-linked');
+    deepLinkFocused = true;
+    window.requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
+
   async function init() {
     try {
       const session = await api('/api/session');
@@ -318,8 +342,14 @@
       attachNotificationControl();
       showNewBrowserNotifications();
     } catch (error) {
-      content.innerHTML = `<div class="empty-state"><img src="assets/noctigarde-mark.png" alt=""><h2>Connexion nécessaire</h2><p>Connecte ton compte Discord pour ouvrir ton registre personnel.</p><a class="button" href="/auth/login" data-discord-login>Connexion Discord</a></div>`;
-      window.NoctigardeAuth?.decorateLoginLinks?.();
+      if (error.status === 401) {
+        const loginUrl = new URL('/auth/login', window.location.origin);
+        loginUrl.searchParams.set('return_to', `${window.location.pathname}${window.location.search}${window.location.hash}`);
+        window.location.replace(loginUrl.toString());
+        return;
+      }
+      content.innerHTML = `<div class="empty-state"><img src="assets/noctigarde-mark.png" alt=""><h2>Espace momentanément indisponible</h2><p>${escapeHtml(error.message || 'Le registre personnel n’a pas pu être chargé.')}</p><button class="button" type="button" data-retry-member>Réessayer</button></div>`;
+      document.querySelector('[data-retry-member]')?.addEventListener('click', () => window.location.reload());
     }
   }
 

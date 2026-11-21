@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'noctigarde-shell-20261119-2';
+const CACHE_NAME = 'noctigarde-shell-20261121-1';
 const SHELL = [
   './',
   './index.html',

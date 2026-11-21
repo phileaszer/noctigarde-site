@@ -1266,6 +1266,9 @@ Object.assign(en, {
     "Utile · …": "Useful · …",
     "Vérifie d’abord le diagnostic des permissions, puis active seulement les règles utiles.": "Check permission diagnostics first, then enable only the rules you need.",
     "Vérifier aussi les permissions Discord": "Also check Discord permissions",
-    "Vie du serveur": "Server community"
+    "Vie du serveur": "Server community",
+    "Espace momentanément indisponible": "Space temporarily unavailable",
+    "Le registre personnel n’a pas pu être chargé.": "The personal record could not be loaded.",
+    "Réessayer": "Try again"
   });
 })();
