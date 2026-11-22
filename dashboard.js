@@ -5751,9 +5751,35 @@ function availableDashboardTabs(state = currentState) {
   return DASHBOARD_TABS.filter((tab) => tab.id !== 'founder' || canShowFounderTab(state));
 }
 
+const DASHBOARD_NAV_GROUPS = [
+  { id: 'start', label: 'Démarrer', tabs: ['overview', 'setup', 'configuration'] },
+  { id: 'manage', label: 'Gestion', tabs: ['service', 'dossiers', 'community'] },
+  { id: 'security', label: 'Sécurité', tabs: ['moderation', 'embeds'] },
+  { id: 'control', label: 'Pilotage', tabs: ['audit', 'operations'] },
+  { id: 'founder', label: 'Régie', tabs: ['founder'] }
+];
+
+function renderDashboardNavItem(tab) {
+  return `
+    <button
+      type="button"
+      class="dashboard-nav-item${tab.id === activeDashboardTab ? ' is-active' : ''}"
+      data-dashboard-tab="${tab.id}"
+      aria-pressed="${tab.id === activeDashboardTab ? 'true' : 'false'}"
+      aria-label="${escapeHtml(`${tab.eyebrow} ${tab.label}`)}"
+    >
+      <span class="dashboard-nav-kicker">${escapeHtml(tab.eyebrow)}</span>
+      <span class="dashboard-nav-copy">
+        <strong>${escapeHtml(tab.label)}</strong>
+        <small>${escapeHtml(tab.description)}</small>
+      </span>
+    </button>`;
+}
+
 function renderDashboardTabs(state) {
   const tabs = availableDashboardTabs(state);
   const activeTab = tabs.find((tab) => tab.id === activeDashboardTab) || tabs[0] || DASHBOARD_TABS[0];
+  const tabById = new Map(tabs.map((tab) => [tab.id, tab]));
   const syncBadge = dashboardHydrating
     ? '<span class="status-badge is-syncing">Actualisation</span>'
     : '';
@@ -5778,20 +5804,15 @@ function renderDashboardTabs(state) {
         <button class="button button-small button-ghost" type="button" data-open-guild-drawer aria-controls="guild-drawer" aria-expanded="false">Changer de serveur</button>
       </div>
       <nav class="dashboard-primary-nav" aria-label="Sections du dashboard">
-        ${tabs.map((tab) => `
-          <button
-            type="button"
-            class="dashboard-nav-item${tab.id === activeDashboardTab ? ' is-active' : ''}"
-            data-dashboard-tab="${tab.id}"
-            aria-pressed="${tab.id === activeDashboardTab ? 'true' : 'false'}"
-          >
-            <span class="dashboard-nav-kicker">${escapeHtml(tab.eyebrow)}</span>
-            <span class="dashboard-nav-copy">
-              <strong>${escapeHtml(tab.label)}</strong>
-              <small>${escapeHtml(tab.description)}</small>
-            </span>
-          </button>
-        `).join('')}
+        ${DASHBOARD_NAV_GROUPS.map((group) => {
+          const groupTabs = group.tabs.map((id) => tabById.get(id)).filter(Boolean);
+          if (!groupTabs.length) return '';
+          return `
+            <div class="dashboard-nav-group dashboard-nav-group-${group.id}" role="group" aria-label="${escapeHtml(group.label)}">
+              <span class="dashboard-nav-group-heading">${escapeHtml(group.label)}</span>
+              <div class="dashboard-nav-group-items">${groupTabs.map(renderDashboardNavItem).join('')}</div>
+            </div>`;
+        }).join('')}
       </nav>
     </section>
   `;

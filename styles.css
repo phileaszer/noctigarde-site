@@ -5236,6 +5236,286 @@ code {
   }
 }
 
+/* Structured dashboard navigation */
+.dashboard-primary-nav {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: start;
+  gap: 0;
+}
+
+.dashboard-nav-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  border-right: 1px solid rgba(205, 232, 255, 0.09);
+}
+
+.dashboard-nav-group:first-child {
+  padding-left: 0;
+}
+
+.dashboard-nav-group:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.dashboard-nav-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.dashboard-nav-group-heading::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(205, 232, 255, 0.09);
+}
+
+.dashboard-nav-group-items {
+  display: grid;
+  gap: 5px;
+}
+
+.dashboard-nav-group .dashboard-nav-item,
+.dashboard-nav-group .dashboard-nav-item[data-dashboard-tab="community"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-height: 54px;
+  padding: 8px 10px;
+}
+
+.dashboard-nav-group .dashboard-nav-kicker {
+  display: none;
+}
+
+.dashboard-nav-group .dashboard-nav-copy {
+  gap: 2px;
+  padding: 0;
+}
+
+.dashboard-nav-group .dashboard-nav-copy strong {
+  font-size: 0.87rem;
+}
+
+.dashboard-nav-group .dashboard-nav-copy small {
+  overflow: hidden;
+  font-size: 0.7rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root[data-theme="sentinel"] .dashboard-control-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  background: rgba(13, 18, 27, 0.9);
+}
+
+:root[data-theme="sentinel"] .control-summary {
+  gap: 3px;
+  padding: 20px 22px 17px;
+}
+
+:root[data-theme="sentinel"] .control-summary h2 {
+  font-size: 1.55rem;
+}
+
+:root[data-theme="sentinel"] .control-status {
+  align-self: stretch;
+  padding: 18px 20px;
+}
+
+:root[data-theme="sentinel"] .dashboard-primary-nav {
+  padding: 14px 16px 16px;
+  border: 0;
+  border-top: 1px solid rgba(205, 232, 255, 0.1);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+:root[data-theme="sentinel"] .dashboard-nav-group .dashboard-nav-item {
+  border-radius: 4px;
+  background: transparent;
+}
+
+:root[data-theme="sentinel"] .dashboard-nav-group .dashboard-nav-item:hover {
+  border-color: rgba(205, 232, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+:root[data-theme="sentinel"] .dashboard-nav-group .dashboard-nav-item.is-active {
+  border-color: rgba(23, 231, 255, 0.36);
+  background: rgba(23, 231, 255, 0.075);
+  box-shadow: inset 3px 0 0 var(--cyan);
+}
+
+.dashboard-control-panel > .workspace-tools {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid rgba(205, 232, 255, 0.1);
+  background: rgba(7, 11, 17, 0.32);
+}
+
+.dashboard-control-panel > .workspace-tools .workspace-commandbar {
+  padding: 10px 16px;
+}
+
+.dashboard-control-panel > .workspace-tools .workspace-search input {
+  min-height: 40px;
+  border-color: rgba(205, 232, 255, 0.12);
+  background: rgba(5, 9, 15, 0.58);
+}
+
+.dashboard-control-panel > .workspace-tools .workspace-open-button {
+  min-width: 154px;
+}
+
+.dashboard-control-panel > .workspace-tools .workspace-search-results {
+  top: calc(100% + 1px);
+  left: 16px;
+  right: 180px;
+}
+
+:root[data-theme="sentinel"] .dashboard-subnav {
+  gap: 0;
+  padding: 0;
+  border-bottom: 1px solid rgba(205, 232, 255, 0.11);
+}
+
+:root[data-theme="sentinel"] .dashboard-subnav-heading {
+  display: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+:root[data-theme="sentinel"] .dashboard-subtab {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+:root[data-theme="sentinel"] .dashboard-subtab:hover,
+:root[data-theme="sentinel"] .dashboard-subtab.is-active {
+  border-color: var(--cyan);
+  background: rgba(23, 231, 255, 0.045);
+}
+
+:root[data-theme="sentinel"] .dashboard-subtab small {
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+:root[data-theme="western"] .dashboard-nav-group {
+  border-right-color: rgba(211, 158, 83, 0.18);
+}
+
+:root[data-theme="western"] .dashboard-nav-group-heading {
+  color: var(--western-brass-light);
+}
+
+:root[data-theme="western"] .dashboard-nav-group-heading::after {
+  background: rgba(211, 158, 83, 0.2);
+}
+
+.dashboard-control-panel > .workspace-tools .workspace-dialog {
+  color: var(--text);
+}
+
+@media (max-width: 1180px) {
+  .dashboard-primary-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+
+  .dashboard-nav-group:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .dashboard-nav-group:nth-child(3n + 1) {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  :root[data-theme="sentinel"] .dashboard-control-panel {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .control-status {
+    justify-content: flex-start;
+    padding: 0 16px 16px;
+  }
+
+  .dashboard-primary-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 16px;
+  }
+
+  .dashboard-nav-group,
+  .dashboard-nav-group:first-child,
+  .dashboard-nav-group:nth-child(3n + 1) {
+    padding: 0 10px;
+  }
+
+  .dashboard-nav-group:nth-child(odd) {
+    padding-left: 0;
+  }
+
+  .dashboard-nav-group:nth-child(even) {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .dashboard-nav-group .dashboard-nav-copy small {
+    display: none;
+  }
+
+  .dashboard-nav-group .dashboard-nav-item,
+  .dashboard-nav-group .dashboard-nav-item[data-dashboard-tab="community"] {
+    min-height: 42px;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-subtabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :root[data-theme="sentinel"] .dashboard-subtab {
+    align-items: center;
+    min-width: 0;
+    padding: 9px 10px;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-subtab small {
+    display: none;
+  }
+
+  .dashboard-control-panel > .workspace-tools .workspace-search-results {
+    left: 10px;
+    right: 10px;
+  }
+}
+
 :root[data-theme="sentinel"] .dashboard-plan-button,
 :root[data-theme="sentinel"] .dashboard-nav-item,
 :root[data-theme="sentinel"] .dashboard-subtab,

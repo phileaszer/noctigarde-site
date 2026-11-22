@@ -221,7 +221,9 @@
         </div>
       </dialog>
     `;
-    stage.before(panel);
+    const controlPanel = document.querySelector('.dashboard-control-panel');
+    if (controlPanel) controlPanel.append(panel);
+    else stage.before(panel);
     bindTools(panel);
   }
 
