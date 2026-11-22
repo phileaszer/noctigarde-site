@@ -25,7 +25,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=c7a9c107034b30922412be4bf32cd02b7ea8b490">
+  <link rel="stylesheet" href="styles.css?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1">
 </head>
 <body>
   <header class="site-header">
@@ -52,10 +52,6 @@
 
   <main>
     <section class="hero hero-home">
-      <div class="hero-backdrop" aria-hidden="true">
-        <img class="hero-emblem" src="assets/noctigarde-mark.png" alt="">
-        <div class="scanlines"></div>
-      </div>
       <div class="hero-content">
         <p class="eyebrow">Service réaliste • Modération • Dashboard</p>
         <h1>Noctigarde</h1>
@@ -72,8 +68,35 @@
           <div><dt>Dashboard</dt><dd>Web</dd></div>
         </dl>
       </div>
-      <div class="hero-preview">
-        <img src="assets/noctigarde-hero.png" alt="Identite visuelle Noctigarde">
+      <div class="hero-preview hero-product-preview" aria-label="Aperçu du dashboard Noctigarde">
+        <div class="product-window-bar">
+          <span><img src="assets/noctigarde-mark.png" alt="">Noctigarde</span>
+          <small><i aria-hidden="true"></i> Serveur actif</small>
+        </div>
+        <div class="product-window-body">
+          <aside class="product-mini-nav" aria-label="Aperçu de la navigation">
+            <span class="is-active">Synthèse</span>
+            <span>Service</span>
+            <span>Modération</span>
+            <span>Planning</span>
+          </aside>
+          <div class="product-mini-main">
+            <header>
+              <div><small>Accueil serveur</small><strong>Communauté Noctigarde</strong></div>
+              <span>En ligne</span>
+            </header>
+            <div class="product-mini-metrics">
+              <article><small>En service</small><strong>3 membres</strong><span>Équipe active</span></article>
+              <article><small>Cette semaine</small><strong>42 h 18</strong><span>Temps cumulé</span></article>
+              <article><small>Tickets</small><strong>2 ouverts</strong><span>Suivi staff</span></article>
+            </div>
+            <div class="product-mini-activity">
+              <div><span class="activity-avatar">F</span><p><strong>Service commencé</strong><small>Fantomenale · à l’instant</small></p><em>Actif</em></div>
+              <div><span class="activity-avatar">N</span><p><strong>Planning mis à jour</strong><small>Événement du vendredi · 8 présents</small></p><em>Prêt</em></div>
+              <div><span class="activity-avatar">S</span><p><strong>Ticket pris en charge</strong><small>Modération · réponse en cours</small></p><em>Suivi</em></div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -111,27 +134,11 @@
           <h2>Deux besoins, un seul bot.</h2>
           <p>Noctigarde aide ton équipe à suivre les heures, gérer les sanctions et retrouver les informations importantes sans fouiller partout.</p>
         </div>
-        <div class="feature-grid">
-          <article class="feature-card">
-            <span class="feature-icon">01</span>
-            <h3>Service</h3>
-            <p>Prise de service, fin de service, rôle automatique, historique et temps total.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">02</span>
-            <h3>Statistiques</h3>
-            <p>Heures personnelles, agents actifs et classements faciles à consulter.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">03</span>
-            <h3>Modération</h3>
-            <p>Avertissements, timeouts, expulsions, bans par ID, purge et logs.</p>
-          </article>
-          <article class="feature-card">
-            <span class="feature-icon">04</span>
-            <h3>Dashboard</h3>
-            <p>Réglages, boutons de service, modération et annonces depuis une page claire.</p>
-          </article>
+        <div class="capability-list">
+          <article><span>01</span><div><h3>Service</h3><p>Prise de service, rôle automatique, historique et temps total.</p></div></article>
+          <article><span>02</span><div><h3>Statistiques</h3><p>Heures personnelles, agents actifs et classements faciles à consulter.</p></div></article>
+          <article><span>03</span><div><h3>Modération</h3><p>Avertissements, sanctions, purge contrôlée et logs lisibles.</p></div></article>
+          <article><span>04</span><div><h3>Dashboard</h3><p>Réglages, annonces et outils du serveur réunis dans une interface claire.</p></div></article>
         </div>
       </div>
     </section>
@@ -211,11 +218,11 @@
       <a href="https://github.com/phileaszer/noctigarde-site">GitHub</a>
     </div>
   </footer>
-  <script src="theme.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
-  <script src="i18n-data.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
-  <script src="i18n-data-extra.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
-  <script src="i18n-data-more.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
-  <script src="i18n.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
-  <script src="auth.js?v=c7a9c107034b30922412be4bf32cd02b7ea8b490"></script>
+  <script src="theme.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
+  <script src="i18n-data.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
+  <script src="i18n-data-extra.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
+  <script src="i18n-data-more.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
+  <script src="i18n.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
+  <script src="auth.js?v=e06438d3e86f0fdcc54e35f6cd1364fba377dba1"></script>
 </body>
 </html>

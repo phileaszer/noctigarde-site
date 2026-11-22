@@ -1269,6 +1269,25 @@ Object.assign(en, {
     "Vie du serveur": "Server community",
     "Espace momentanément indisponible": "Space temporarily unavailable",
     "Le registre personnel n’a pas pu être chargé.": "The personal record could not be loaded.",
-    "Réessayer": "Try again"
+    "Réessayer": "Try again",
+    "2 ouverts": "2 open",
+    "3 membres": "3 members",
+    "42 h 18": "42 h 18",
+    "Aperçu de la navigation": "Navigation preview",
+    "Aperçu du dashboard Noctigarde": "Noctigarde dashboard preview",
+    "Avertissements, sanctions, purge contrôlée et logs lisibles.": "Warnings, sanctions, controlled purges, and readable logs.",
+    "Cette semaine": "This week",
+    "Communauté Noctigarde": "Noctigarde community",
+    "Équipe active": "Active team",
+    "Événement du vendredi · 8 présents": "Friday event · 8 attending",
+    "Fantomenale · à l’instant": "Fantomenale · just now",
+    "Modération · réponse en cours": "Moderation · response in progress",
+    "Planning mis à jour": "Schedule updated",
+    "Prise de service, rôle automatique, historique et temps total.": "Duty sessions, automatic roles, history, and total time.",
+    "Réglages, annonces et outils du serveur réunis dans une interface claire.": "Server settings, announcements, and tools in one clear interface.",
+    "Serveur actif": "Active server",
+    "Service commencé": "Duty session started",
+    "Temps cumulé": "Combined time",
+    "Ticket pris en charge": "Ticket assigned"
   });
 })();

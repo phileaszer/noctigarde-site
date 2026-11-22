@@ -11,8 +11,8 @@
       currentWestern: 'Style actuel : Western RP. Cliquer pour revenir au style Noctigarde.',
       creatorRole: 'Créatrice de Noctigarde',
       skipContent: 'Aller au contenu principal',
-      releaseTitle: 'Version de démonstration publique',
-      releaseMessage: 'Noctigarde est actuellement accessible gratuitement afin que les communautés puissent l’essayer. À l’avenir, seules certaines options avancées pourront devenir payantes ; une partie gratuite restera disponible. Aucun abonnement ni prélèvement n’est actif aujourd’hui, et les détails seront annoncés avant tout changement.'
+      releaseTitle: 'Démo publique',
+      releaseMessage: 'Toutes les fonctions sont gratuites aujourd’hui. Certaines options avancées pourront évoluer plus tard, après une annonce claire.'
     },
     en: {
       actionWestern: 'Western style',
@@ -21,8 +21,8 @@
       currentWestern: 'Current style: Western RP. Click to switch back to Noctigarde style.',
       creatorRole: 'Creator of Noctigarde',
       skipContent: 'Skip to main content',
-      releaseTitle: 'Public demonstration version',
-      releaseMessage: 'Noctigarde is currently available at no cost so communities can try it. Some advanced features may become paid later, but a free part will remain available. No subscription or charge is active today, and the details will be announced before any change.'
+      releaseTitle: 'Public demo',
+      releaseMessage: 'Every feature is free today. Some advanced options may evolve later, after a clear announcement.'
     }
   };
 

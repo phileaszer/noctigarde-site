@@ -254,9 +254,28 @@
     toggle.textContent = 'Menu';
     actions.prepend(toggle);
 
+    const mobileActions = document.createElement('div');
+    mobileActions.className = 'mobile-menu-actions';
+    mobileActions.dataset.i18nIgnore = 'true';
+    nav.append(mobileActions);
+
+    function moveActionItems(toMobileMenu) {
+      const source = toMobileMenu ? actions : mobileActions;
+      const target = toMobileMenu ? mobileActions : actions;
+      const items = Array.from(source.children).filter((child) => child !== toggle);
+
+      for (const item of items) {
+        if (toMobileMenu) mobileActions.append(item);
+        else target.insertBefore(item, toggle);
+      }
+    }
+
     let measureFrame = null;
 
     function setOpen(isOpen) {
+      if (isOpen && header.classList.contains('has-collapsed-nav')) {
+        moveActionItems(true);
+      }
       header.classList.toggle('is-nav-open', isOpen);
       toggle.setAttribute('aria-expanded', String(isOpen));
       toggle.textContent = isOpen ? 'Fermer' : 'Menu';
@@ -293,6 +312,7 @@
       const wasOpen = header.classList.contains('is-nav-open');
 
       header.classList.remove('has-collapsed-nav', 'is-nav-open');
+      moveActionItems(false);
 
       const headerStyle = window.getComputedStyle(header);
       const availableWidth = header.clientWidth
@@ -307,6 +327,7 @@
       const shouldCollapse = requiredWidth > availableWidth;
 
       header.classList.toggle('has-collapsed-nav', shouldCollapse);
+      moveActionItems(shouldCollapse);
 
       if (shouldCollapse && wasOpen) {
         setOpen(true);
