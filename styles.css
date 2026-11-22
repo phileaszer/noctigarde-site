@@ -11601,6 +11601,308 @@ h3,
   margin-top: 12px;
 }
 
+/* Dashboard workspace unification */
+:root[data-theme="sentinel"] .dashboard-tab-stage {
+  --workspace-border: rgba(205, 232, 255, 0.11);
+  --workspace-border-soft: rgba(205, 232, 255, 0.075);
+  --workspace-surface: rgba(255, 255, 255, 0.018);
+  --workspace-surface-strong: rgba(255, 255, 255, 0.032);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .button,
+:root[data-theme="sentinel"] .dashboard-tab-stage .file-upload-action,
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-progress,
+:root[data-theme="sentinel"] .dashboard-tab-stage .field-help,
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-summary-row,
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-category-grid form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .payroll-archive-form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .founder-console-note,
+:root[data-theme="sentinel"] .dashboard-tab-stage .creator-premium-form {
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .button {
+  min-height: 40px;
+  padding: 9px 15px;
+  line-height: 1.2;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .button-small {
+  min-height: 36px;
+  padding: 7px 12px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .field-help {
+  width: 23px;
+  height: 23px;
+  border-color: var(--workspace-border);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-grid,
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid,
+:root[data-theme="sentinel"] .dashboard-tab-stage .operations-grid,
+:root[data-theme="sentinel"] .dashboard-tab-stage .maintenance-grid {
+  align-items: start;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  gap: 14px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card,
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid > form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid > .inline-form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid > form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid > .inline-form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-card,
+:root[data-theme="sentinel"] .dashboard-tab-stage .automod-card,
+:root[data-theme="sentinel"] .dashboard-tab-stage .operation-card,
+:root[data-theme="sentinel"] .dashboard-tab-stage .maintenance-section,
+:root[data-theme="sentinel"] .dashboard-tab-stage .founder-storage-panel {
+  min-width: 0;
+  border-color: var(--workspace-border);
+  border-radius: 5px;
+  background: var(--workspace-surface);
+  box-shadow: none;
+  clip-path: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card,
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid > form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid > .inline-form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid > form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid > .inline-form,
+:root[data-theme="sentinel"] .dashboard-tab-stage .automod-card {
+  align-content: start;
+  padding: 16px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-summary-row {
+  grid-template-columns: minmax(130px, 0.65fr) minmax(0, 1fr);
+  padding: 9px 11px;
+  border-color: var(--workspace-border-soft);
+  background: rgba(4, 8, 14, 0.3);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-summary-row dd {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-progress,
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-index {
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-step {
+  padding: 16px;
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-step.is-done {
+  border-color: rgba(21, 245, 209, 0.26);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-step form {
+  align-items: end;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .setup-step form .button {
+  min-width: 180px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card > .button,
+:root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card form > .button:last-child {
+  width: auto;
+  min-width: 190px;
+  justify-self: start;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .form-grid form > .button:last-child,
+:root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid form > .button:last-child,
+:root[data-theme="sentinel"] .dashboard-tab-stage .automod-card form > .button:last-child,
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-setting-block form > .button:last-child {
+  width: auto;
+  min-width: 170px;
+  justify-self: start;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-heading {
+  padding: 16px 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--workspace-border);
+  background: transparent;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-card {
+  padding: 16px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-card.is-restricted {
+  box-shadow: inset 3px 0 0 rgba(23, 231, 255, 0.55);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-rule,
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-general-access-note {
+  border-radius: 3px;
+  background: rgba(4, 8, 14, 0.34);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .dossier-type-access-form .button {
+  width: auto;
+  min-width: 160px;
+  justify-self: start;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .report-download-row {
+  grid-template-columns: 1fr;
+  gap: 9px;
+  padding: 13px 0;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .report-download-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .report-download-actions > .button,
+:root[data-theme="sentinel"] .dashboard-tab-stage .report-format-menu {
+  min-width: 0;
+  width: auto;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .report-format-menu > summary {
+  min-width: 142px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .operations-grid > .operation-card {
+  overflow: hidden;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid {
+  align-items: end;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid > .button,
+:root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid > button {
+  width: auto;
+  min-width: 170px;
+  justify-self: start;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .file-upload-visual {
+  border-radius: 4px;
+  background: rgba(4, 8, 14, 0.42);
+  box-shadow: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .file-upload-action {
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .founder-storage-panel {
+  margin: 0 0 14px;
+  padding: 18px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .maintenance-section {
+  padding: 15px;
+  border: 1px solid var(--workspace-border);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .founder-console-note {
+  padding: 12px 14px;
+  border: 1px solid var(--workspace-border);
+  border-left: 3px solid rgba(23, 231, 255, 0.58);
+  background: rgba(4, 8, 14, 0.34);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .feature-flag-row {
+  border-color: var(--workspace-border);
+  border-radius: 4px;
+  background: var(--workspace-surface);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .creator-premium-form {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-stage .table-shell,
+:root[data-theme="sentinel"] .dashboard-tab-stage .dashboard-table,
+:root[data-theme="sentinel"] .dashboard-tab-stage .operation-list {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  :root[data-theme="sentinel"] .dashboard-tab-stage .operations-grid,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .maintenance-grid,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .dossier-access-grid {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .feature-flag-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  :root[data-theme="sentinel"] .dashboard-tab-panel > .dashboard-panel,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .founder-storage-panel {
+    padding: 16px;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .config-summary-row,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .setup-step-heading,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .setup-step form,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .feature-flag-row {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .setup-step-heading strong {
+    justify-self: start;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .setup-step form .button,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card > .button,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .config-hub-card form > .button:last-child,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .form-grid form > .button:last-child,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .module-form-grid form > .button:last-child,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .automod-card form > .button:last-child,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .dossier-setting-block form > .button:last-child,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .dossier-type-access-form .button,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid > .button,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .operation-form-grid > button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .report-download-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .dashboard-tab-stage .report-download-actions > .button,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .report-format-menu,
+  :root[data-theme="sentinel"] .dashboard-tab-stage .report-format-menu > summary {
+    width: 100%;
+  }
+}
+
 .member-absence-form h4,
 .member-absence-form button {
   grid-column: 1 / -1;
