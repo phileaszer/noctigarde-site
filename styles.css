@@ -4911,6 +4911,129 @@ code {
   background: rgba(255, 255, 255, 0.018);
 }
 
+:root[data-theme="sentinel"] .privacy-center-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid rgba(205, 232, 255, 0.11);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.016);
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .panel-heading {
+  margin-bottom: 16px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .panel-heading h3 {
+  margin: 4px 0 6px;
+  font-size: 1.15rem;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type > label {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(205, 232, 255, 0.09);
+  border-radius: 4px;
+  background: rgba(4, 8, 14, 0.28);
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type > label > span {
+  min-height: 34px;
+  color: var(--soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type input {
+  min-width: 0;
+  padding-right: 58px;
+  font-weight: 850;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type small {
+  position: absolute;
+  right: 24px;
+  bottom: 25px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type > .button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  width: auto;
+  min-width: 210px;
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .split-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 16px 0;
+  border-top: 1px solid rgba(205, 232, 255, 0.09);
+  border-bottom: 1px solid rgba(205, 232, 255, 0.09);
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .split-actions .button {
+  width: auto;
+  min-width: 190px;
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type {
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+  align-items: end;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type > label {
+  grid-column: 1;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type textarea {
+  min-height: 92px;
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type > .button {
+  grid-column: 2;
+  min-height: 44px;
+  clip-path: none;
+  border-color: rgba(255, 91, 154, 0.34);
+  border-radius: 4px;
+  background: rgba(255, 91, 154, 0.055);
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type > .button:hover {
+  border-color: rgba(255, 91, 154, 0.6);
+  background: rgba(255, 91, 154, 0.1);
+}
+
+:root[data-theme="sentinel"] .privacy-center-panel > .operation-list {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(205, 232, 255, 0.09);
+}
+
+@media (max-width: 1050px) {
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 700px) {
   :root[data-theme="sentinel"] .onboarding-verification.is-compact {
     grid-template-columns: 1fr;
@@ -4935,6 +5058,32 @@ code {
   :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .form-row,
   :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .button {
     grid-column: 1;
+  }
+
+  :root[data-theme="sentinel"] .privacy-center-panel {
+    padding: 14px;
+  }
+
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type,
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:first-of-type > .button,
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type > label,
+  :root[data-theme="sentinel"] .privacy-center-panel > .operation-form-grid:last-of-type > .button {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  :root[data-theme="sentinel"] .privacy-center-panel > .split-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .privacy-center-panel > .split-actions .button {
+    width: 100%;
+    min-width: 0;
   }
 }
 
