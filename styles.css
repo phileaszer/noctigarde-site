@@ -4845,6 +4845,99 @@ code {
   }
 }
 
+/* Dashboard page harmony refinements */
+:root[data-theme="sentinel"] .setup-progress,
+:root[data-theme="sentinel"] .dashboard-metrics article,
+:root[data-theme="sentinel"] .automod-security-card,
+:root[data-theme="sentinel"] .automod-toggle,
+:root[data-theme="sentinel"] .automod-control-grid > div,
+:root[data-theme="sentinel"] .active-service-grid article,
+:root[data-theme="sentinel"] .personal-service-head div,
+:root[data-theme="sentinel"] .service-empty {
+  clip-path: none;
+  border-color: rgba(205, 232, 255, 0.11);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-metrics article {
+  min-height: 96px;
+  padding: 14px;
+  border-top-color: rgba(23, 231, 255, 0.4);
+}
+
+:root[data-theme="sentinel"] .setup-progress {
+  min-width: 54px;
+  min-height: 38px;
+  color: #05070c;
+  border-color: transparent;
+  background: var(--accent-gradient);
+}
+
+:root[data-theme="sentinel"] .onboarding-verification.is-compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+:root[data-theme="sentinel"] .onboarding-verification.is-compact .onboarding-checks {
+  display: none;
+}
+
+:root[data-theme="sentinel"] .onboarding-verification.is-compact form {
+  margin: 0;
+}
+
+:root[data-theme="sentinel"] .community-two-column.is-empty {
+  grid-template-columns: 1fr;
+}
+
+:root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+:root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > label:first-child,
+:root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .form-row,
+:root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .button {
+  grid-column: 1 / -1;
+}
+
+:root[data-theme="sentinel"] .community-empty {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 2px solid rgba(36, 215, 208, 0.4);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+@media (max-width: 700px) {
+  :root[data-theme="sentinel"] .onboarding-verification.is-compact {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .onboarding-verification.is-compact form,
+  :root[data-theme="sentinel"] .onboarding-verification.is-compact .button {
+    width: 100%;
+  }
+
+  :root[data-theme="sentinel"] .onboarding-verification.is-compact .button {
+    min-height: 44px;
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > label:first-child,
+  :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .form-row,
+  :root[data-theme="sentinel"] .community-two-column.is-empty .community-create-form > .button {
+    grid-column: 1;
+  }
+}
+
 /* Planning-inspired visual system */
 :root[data-theme="sentinel"] {
   --radius: 6px;
@@ -5513,6 +5606,333 @@ code {
   .dashboard-control-panel > .workspace-tools .workspace-search-results {
     left: 10px;
     right: 10px;
+  }
+}
+
+/* Harmonized dashboard content */
+:root[data-theme="sentinel"] .dashboard-tab-stage {
+  display: grid;
+  gap: 16px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-panel {
+  gap: 16px;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-panel > .dashboard-panel {
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(205, 232, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(13, 18, 27, 0.88);
+  box-shadow: none;
+  clip-path: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-panel > .dashboard-panel::before {
+  left: 20px;
+  width: 48px;
+  background: var(--cyan);
+  opacity: 0.4;
+}
+
+:root[data-theme="sentinel"] .dashboard-tab-panel > .dashboard-panel::after {
+  display: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-command-bar,
+:root[data-theme="sentinel"] .panel-heading,
+:root[data-theme="sentinel"] .panel-mini-heading,
+:root[data-theme="sentinel"] .community-section-heading,
+:root[data-theme="sentinel"] .service-card-heading {
+  margin: 0 0 18px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid rgba(205, 232, 255, 0.1);
+}
+
+:root[data-theme="sentinel"] .dashboard-command-bar h2,
+:root[data-theme="sentinel"] .panel-heading h2 {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+:root[data-theme="sentinel"] .panel-mini-heading h3,
+:root[data-theme="sentinel"] .community-section-heading h3,
+:root[data-theme="sentinel"] .service-card-heading h3,
+:root[data-theme="sentinel"] .home-block-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+:root[data-theme="sentinel"] .status-badge,
+:root[data-theme="sentinel"] .setup-step-heading strong,
+:root[data-theme="sentinel"] .config-status-card small {
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .today-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+:root[data-theme="sentinel"] .today-card {
+  align-content: start;
+  gap: 8px;
+  min-height: 112px;
+  padding: 14px;
+  clip-path: none;
+  border: 1px solid rgba(205, 232, 255, 0.1);
+  border-radius: 5px;
+  border-top-color: rgba(23, 231, 255, 0.42);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+:root[data-theme="sentinel"] .today-card.is-warning {
+  border-color: rgba(205, 232, 255, 0.1);
+  border-top-color: rgba(255, 91, 154, 0.55);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+:root[data-theme="sentinel"] .today-card span {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+:root[data-theme="sentinel"] .today-card strong {
+  font-size: 1.22rem;
+  line-height: 1.15;
+}
+
+:root[data-theme="sentinel"] .today-card p {
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+:root[data-theme="sentinel"] .notification-center {
+  margin: 18px 0 0;
+  padding: 16px;
+  border: 1px solid rgba(205, 232, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.014);
+}
+
+:root[data-theme="sentinel"] .notification-center .home-block-heading {
+  margin: 0 0 12px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid rgba(205, 232, 255, 0.08);
+}
+
+:root[data-theme="sentinel"] .notification-list {
+  gap: 0;
+  margin: 0;
+}
+
+:root[data-theme="sentinel"] .notification-item {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(205, 232, 255, 0.075);
+  background: transparent;
+}
+
+:root[data-theme="sentinel"] .notification-item:last-child {
+  border-bottom: 0;
+}
+
+:root[data-theme="sentinel"] .notification-item.is-warning,
+:root[data-theme="sentinel"] .notification-item.is-danger {
+  border-left: 0;
+}
+
+:root[data-theme="sentinel"] .notification-main strong {
+  font-size: 0.86rem;
+}
+
+:root[data-theme="sentinel"] .notification-main span {
+  font-size: 0.78rem;
+}
+
+:root[data-theme="sentinel"] .notification-actions .button {
+  min-width: 36px;
+  min-height: 34px;
+  padding: 6px 9px;
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .notification-dismiss {
+  width: 36px;
+  padding: 0;
+}
+
+:root[data-theme="sentinel"] .notification-dismiss::before {
+  content: "\00d7";
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+:root[data-theme="sentinel"] .home-block,
+:root[data-theme="sentinel"] .dashboard-path,
+:root[data-theme="sentinel"] .dashboard-path-card,
+:root[data-theme="sentinel"] .plan-scope-card,
+:root[data-theme="sentinel"] .server-preset-panel,
+:root[data-theme="sentinel"] .server-preset-card,
+:root[data-theme="sentinel"] .server-preset-advice,
+:root[data-theme="sentinel"] .setup-step,
+:root[data-theme="sentinel"] .config-hub-card,
+:root[data-theme="sentinel"] .inline-form,
+:root[data-theme="sentinel"] .form-grid form,
+:root[data-theme="sentinel"] .split-mini article,
+:root[data-theme="sentinel"] .service-insight,
+:root[data-theme="sentinel"] .service-roadmap article,
+:root[data-theme="sentinel"] .community-section,
+:root[data-theme="sentinel"] .community-record,
+:root[data-theme="sentinel"] .community-insight,
+:root[data-theme="sentinel"] .dossier-setting-block,
+:root[data-theme="sentinel"] .case-detail-card,
+:root[data-theme="sentinel"] .operation-card,
+:root[data-theme="sentinel"] .founder-storage-panel,
+:root[data-theme="sentinel"] .maintenance-section,
+:root[data-theme="sentinel"] .user-profile-card,
+:root[data-theme="sentinel"] .dashboard-alert {
+  clip-path: none;
+  border: 1px solid rgba(205, 232, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.018);
+  box-shadow: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-path,
+:root[data-theme="sentinel"] .server-preset-panel {
+  padding: 18px;
+}
+
+:root[data-theme="sentinel"] .dashboard-path-card,
+:root[data-theme="sentinel"] .server-preset-card,
+:root[data-theme="sentinel"] .config-hub-card,
+:root[data-theme="sentinel"] .setup-step,
+:root[data-theme="sentinel"] .service-insight,
+:root[data-theme="sentinel"] .service-roadmap article,
+:root[data-theme="sentinel"] .community-section,
+:root[data-theme="sentinel"] .operation-card {
+  padding: 16px;
+}
+
+:root[data-theme="sentinel"] .dashboard-path-card {
+  min-height: 170px;
+}
+
+:root[data-theme="sentinel"] .dashboard-path-card span,
+:root[data-theme="sentinel"] .setup-index {
+  clip-path: none;
+  border-radius: 4px;
+}
+
+:root[data-theme="sentinel"] .config-hub-grid,
+:root[data-theme="sentinel"] .service-insights,
+:root[data-theme="sentinel"] .community-two-column,
+:root[data-theme="sentinel"] .operations-grid,
+:root[data-theme="sentinel"] .form-grid,
+:root[data-theme="sentinel"] .module-form-grid {
+  gap: 12px;
+}
+
+:root[data-theme="sentinel"] .config-hub-card > h3,
+:root[data-theme="sentinel"] .inline-form > h3,
+:root[data-theme="sentinel"] .community-section > h3,
+:root[data-theme="sentinel"] .operation-card > h3 {
+  margin-top: 0;
+}
+
+:root[data-theme="sentinel"] .table-shell {
+  border-color: rgba(205, 232, 255, 0.09);
+  border-radius: 4px;
+  background: rgba(4, 8, 14, 0.32);
+}
+
+:root[data-theme="sentinel"] .dashboard-table th {
+  letter-spacing: 0;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+:root[data-theme="sentinel"] .dashboard-table th,
+:root[data-theme="sentinel"] .dashboard-table td {
+  padding: 10px 12px;
+  border-bottom-color: rgba(205, 232, 255, 0.07);
+}
+
+:root[data-theme="sentinel"] .dashboard-alert.is-ready {
+  border-left: 3px solid #60e9b2;
+}
+
+:root[data-theme="sentinel"] .dashboard-alert.is-warning {
+  border-left: 3px solid #f0b35f;
+}
+
+:root[data-theme="sentinel"] .dashboard-panel input,
+:root[data-theme="sentinel"] .dashboard-panel select,
+:root[data-theme="sentinel"] .dashboard-panel textarea {
+  border-color: rgba(205, 232, 255, 0.13);
+  border-radius: 4px;
+  background: rgba(5, 9, 15, 0.66);
+}
+
+:root[data-theme="sentinel"] .dashboard-panel input:focus,
+:root[data-theme="sentinel"] .dashboard-panel select:focus,
+:root[data-theme="sentinel"] .dashboard-panel textarea:focus {
+  border-color: rgba(23, 231, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(23, 231, 255, 0.08);
+}
+
+:root[data-theme="sentinel"] .role-chip,
+:root[data-theme="sentinel"] .automod-word-chip,
+:root[data-theme="sentinel"] .dossier-access-badge {
+  clip-path: none;
+  border-radius: 4px;
+}
+
+@media (max-width: 1280px) {
+  :root[data-theme="sentinel"] .today-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  :root[data-theme="sentinel"] .dashboard-tab-panel > .dashboard-panel {
+    padding: 16px;
+  }
+
+  :root[data-theme="sentinel"] .today-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  :root[data-theme="sentinel"] .today-card {
+    min-height: 104px;
+    padding: 12px;
+  }
+
+  :root[data-theme="sentinel"] .notification-center {
+    padding: 12px;
+  }
+
+  :root[data-theme="sentinel"] .notification-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-inline: 4px;
+  }
+
+  :root[data-theme="sentinel"] .notification-actions {
+    justify-content: flex-end;
+  }
+
+  :root[data-theme="sentinel"] .notification-main span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 }
 
@@ -10208,6 +10628,7 @@ html[lang="en"] .language-fr {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
 }
 
 .community-create-form,

@@ -1317,7 +1317,7 @@ function notificationCenter(state, compact = false) {
               </button>
               <div class="notification-actions">
                 ${item.read ? '' : `<button class="button button-small button-ghost" type="button" data-notification-key="${escapeHtml(item.key)}" data-notification-action="read">Lu</button>`}
-                <button class="button button-small button-ghost" type="button" data-notification-key="${escapeHtml(item.key)}" data-notification-action="dismiss" aria-label="Retirer cette notification">X</button>
+                <button class="button button-small button-ghost notification-dismiss" type="button" data-notification-key="${escapeHtml(item.key)}" data-notification-action="dismiss" aria-label="Retirer cette notification"></button>
               </div>
             </div>
           `).join('')}
@@ -1505,7 +1505,7 @@ function renderSetupAssistant(state, roleOptions, commandRoleOptions, channelOpt
         </div>
         <span class="setup-progress">${escapeHtml(onboarding.completed)}/${escapeHtml(onboarding.total)}</span>
       </div>
-      <div class="onboarding-verification">
+      <div class="onboarding-verification${onboarding.steps.length === 0 ? ' is-compact' : ''}">
         <div class="onboarding-progress-track" aria-label="Progression de l’installation"><span style="width:${Math.round((onboarding.completed / Math.max(onboarding.total, 1)) * 100)}%"></span></div>
         <div class="onboarding-checks">${onboarding.steps.map(step => `<article class="${step.complete ? 'is-ready' : 'is-missing'}"><span aria-hidden="true">${step.complete ? '✓' : '!'}</span><div><strong>${escapeHtml(step.label)}</strong><small>${escapeHtml(step.detail)}</small></div></article>`).join('')}</div>
         <form data-action-form="run-validation"><button class="button button-small button-ghost" type="submit">Vérifier aussi les permissions Discord</button></form>
@@ -5624,7 +5624,7 @@ function renderCommunityPanel(state, roleOptions, channelOptions) {
     <div class="panel-heading row-heading"><div><p class="eyebrow">Vie du serveur</p><h2>Équipe et communauté</h2><p class="muted">Recrutements, disponibilités, idées et suivi depuis un même bureau.</p></div><span class="status-badge is-ready">Actif</span></div>
     <section class="community-section community-recruitment">
       <div class="community-section-heading"><div><span>Recrutements</span><h3>Campagnes et candidatures</h3></div><strong>${escapeHtml(recruitment.applications.filter(item => ['submitted', 'reviewing', 'interview'].includes(item.status)).length)} à traiter</strong></div>
-      <div class="community-two-column"><form data-action-form="community-create-recruitment-form" class="community-create-form">
+      <div class="community-two-column${recruitment.forms.length === 0 ? ' is-empty' : ''}"><form data-action-form="community-create-recruitment-form" class="community-create-form">
         <label><span>Nom du recrutement</span><input name="title" maxlength="100" required placeholder="Ex. Recrutement modération"></label>
         <label><span>Présentation</span><textarea name="description" maxlength="1000" placeholder="Explique le rôle recherché"></textarea></label>
         <label><span>Questions, une par ligne</span><textarea name="questions" required placeholder="Pourquoi souhaites-tu nous rejoindre ?&#10;Quelles sont tes disponibilités ?"></textarea></label>
