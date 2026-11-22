@@ -1288,6 +1288,26 @@ Object.assign(en, {
     "Serveur actif": "Active server",
     "Service commencé": "Duty session started",
     "Temps cumulé": "Combined time",
-    "Ticket pris en charge": "Ticket assigned"
+    "Ticket pris en charge": "Ticket assigned",
+    "Lien du planning partagé": "Shared schedule link",
+    "Ouvrir le planning": "Open schedule",
+    "Une page simple, toujours à jour et accessible sur téléphone ou ordinateur.": "A simple, always up-to-date page available on phones and computers.",
+    "Planning partagé": "Shared schedule",
+    "Un lien simple à ouvrir, toujours à jour et sans fichier à télécharger.": "A simple link that stays up to date, with no file to download.",
+    "Créer le planning": "Create schedule",
+    "Planning partagé créé et lien copié.": "Shared schedule created and link copied.",
+    "Planning partagé créé. Tu peux copier son lien ci-dessous.": "Shared schedule created. You can copy its link below.",
+    "Afficher les événements": "Show events",
+    "Ce planning se met à jour automatiquement.": "This schedule updates automatically.",
+    "Chargement du planning…": "Loading schedule…",
+    "Connexion au planning…": "Connecting to schedule…",
+    "Filtres du planning": "Schedule filters",
+    "Les événements vont apparaître ici.": "Events will appear here.",
+    "Passés": "Past",
+    "Planning en ligne": "Online schedule",
+    "Planning partagé | Noctigarde": "Shared schedule | Noctigarde",
+    "Planning partagé et actualisé d’un serveur Noctigarde.": "Shared and up-to-date schedule for a Noctigarde server.",
+    "noindex, nofollow, noarchive": "noindex, nofollow, noarchive",
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; form-action 'none'; upgrade-insecure-requests": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; form-action 'none'; upgrade-insecure-requests"
   });
 })();

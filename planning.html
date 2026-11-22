@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr" data-theme="sentinel">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; form-action 'none'; upgrade-insecure-requests">
+  <title>Planning partagé | Noctigarde</title>
+  <meta name="description" content="Planning partagé et actualisé d’un serveur Noctigarde.">
+  <meta name="theme-color" content="#05070c">
+  <link rel="icon" href="assets/noctigarde-mark.png" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=9e6eece90878d9dc86cbff6254700259c7ada12a">
+</head>
+<body class="public-planning-page">
+  <header class="public-planning-header">
+    <a class="brand" href="https://noctigarde.fr" aria-label="Noctigarde">
+      <img src="assets/noctigarde-mark.png" alt="">
+      <span>Noctigarde</span>
+    </a>
+    <span class="public-planning-live"><i aria-hidden="true"></i><span data-copy="live">Planning en ligne</span></span>
+  </header>
+
+  <main class="public-planning-shell">
+    <section class="public-planning-intro" aria-labelledby="planning-title">
+      <div>
+        <p class="eyebrow" data-copy="eyebrow">Planning partagé</p>
+        <h1 id="planning-title" data-planning-title>Chargement du planning…</h1>
+        <p data-planning-summary>Les événements vont apparaître ici.</p>
+      </div>
+      <button class="button button-small button-ghost" type="button" data-planning-refresh data-copy="refresh">Actualiser</button>
+    </section>
+
+    <section class="public-planning-toolbar" aria-label="Filtres du planning">
+      <div class="public-planning-filters" role="group" aria-label="Afficher les événements">
+        <button type="button" class="is-active" data-planning-filter="upcoming" data-copy="upcoming">À venir</button>
+        <button type="button" data-planning-filter="all" data-copy="all">Tous</button>
+        <button type="button" data-planning-filter="past" data-copy="past">Passés</button>
+      </div>
+      <p data-planning-status role="status" aria-live="polite">Connexion au planning…</p>
+    </section>
+
+    <section class="public-planning-events" data-planning-events aria-live="polite"></section>
+  </main>
+
+  <footer class="public-planning-footer">
+    <span>Noctigarde</span>
+    <span data-copy="automatic">Ce planning se met à jour automatiquement.</span>
+  </footer>
+  <script src="i18n-data.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+  <script src="i18n-data-extra.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+  <script src="i18n-data-more.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+  <script src="i18n.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+  <script src="theme.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+  <script src="planning-public.js?v=9e6eece90878d9dc86cbff6254700259c7ada12a"></script>
+</body>
+</html>

@@ -113,14 +113,17 @@
   function renderGeneratedLink(kind, url) {
     const host = document.querySelector('[data-workspace-generated-link]');
     if (!host) return;
-    const label = kind === 'calendar' ? 'Lien d’abonnement au calendrier' : 'Lien du diagnostic support';
+    const label = kind === 'calendar' ? 'Lien du planning partagé' : 'Lien du diagnostic support';
+    const isCalendar = kind === 'calendar';
+    const openLabel = isCalendar ? 'Ouvrir le planning' : 'Ouvrir';
     host.hidden = false;
     host.innerHTML = `
       <label><span>${label}</span><input type="text" value="${escapeHtml(url)}" readonly data-generated-link></label>
       <div class="workspace-link-actions">
         <button class="button button-small" type="button" data-copy-generated>Copier le lien</button>
-        <a class="button button-small button-ghost" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a>
+        <a class="button button-small button-ghost" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${openLabel}</a>
       </div>
+      ${isCalendar ? '<small class="workspace-link-help">Une page simple, toujours à jour et accessible sur téléphone ou ordinateur.</small>' : ''}
     `;
     host.querySelector('[data-generated-link]')?.select();
   }
@@ -169,7 +172,7 @@
       : (googleSheet.configured
         ? '<button class="button button-small" type="button" data-planning-sheets-connect>Lier Google Sheets</button>'
         : '<button class="button button-small button-ghost" type="button" disabled>Configuration Google requise</button>');
-    const planningAction = `<div class="workspace-inline-actions">${googleSheetActions}<a class="button button-small button-ghost" href="/api/guilds/${context.guildId}/planning.ics" download="planning-noctigarde-${context.guildId}.ics">Ajouter au calendrier</a></div>`;
+    const planningAction = `<div class="workspace-inline-actions">${googleSheetActions}</div>`;
     panel.innerHTML = `
       <div class="workspace-commandbar">
         <label class="workspace-search"><span class="visually-hidden">Recherche dans ce serveur</span><input type="search" data-workspace-search placeholder="Rechercher un membre, rôle, ticket ou réglage"></label>
@@ -206,7 +209,7 @@
             <div class="workspace-view-panel" data-workspace-view-panel="planning" hidden>
               <div class="workspace-action-list">
                 <article><div><strong>Planning Google Sheets</strong><small>${googleSheet.linked ? (googleSheet.lastError ? 'La dernière synchronisation a échoué. Tu peux la relancer.' : 'Une seule feuille liée à ce serveur, mise à jour après chaque changement.') : (planningShifts.length ? `${planningShifts.length} créneau(x) prêt(s) à synchroniser dans une feuille unique.` : 'Lie une feuille maintenant : elle restera prête pour les prochains créneaux.')}</small></div>${planningAction}</article>
-                <article><div><strong>Abonnement au planning</strong><small>Les changements futurs seront récupérés automatiquement.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le lien</button></article>
+              <article><div><strong>Planning partagé</strong><small>Un lien simple à ouvrir, toujours à jour et sans fichier à télécharger.</small></div><button class="button button-small button-ghost" type="button" data-calendar-link>Créer le planning</button></article>
                 <article><div><strong>Diagnostic support</strong><small>Un état technique sans message privé ni donnée sensible.</small></div><button class="button button-small button-ghost" type="button" data-support-report>Créer le diagnostic</button></article>
               </div>
               <div class="workspace-generated-link" data-workspace-generated-link hidden></div>
@@ -355,7 +358,7 @@
           const payload = await request(`/api/guilds/${context.guildId}/calendar-token`, { method: 'POST' });
           renderGeneratedLink('calendar', payload.url);
           const copied = await copyText(payload.url);
-          toast(copied ? 'Lien calendrier créé et copié.' : 'Lien calendrier créé. Tu peux le copier ci-dessous.');
+          toast(copied ? 'Planning partagé créé et lien copié.' : 'Planning partagé créé. Tu peux copier son lien ci-dessous.');
         } catch (error) { toast(error.message, 'error'); }
         finally { button.disabled = false; }
         return;

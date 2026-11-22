@@ -166,6 +166,7 @@
   }
 
   function ensureCreatorCredit() {
+    if (document.body.classList.contains('public-planning-page')) return;
     let footer = document.querySelector('.site-footer');
 
     if (!footer) {
