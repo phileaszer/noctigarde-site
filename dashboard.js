@@ -741,15 +741,17 @@ function renderGuilds() {
   }
 
   list.innerHTML = guilds.map((guild) => `
-    <article class="guild-card ${guild.id === selectedGuildId ? 'is-active' : ''}">
-      <button type="button" data-select-guild="${escapeHtml(guild.id)}">
+    <article class="guild-card ${guild.id === selectedGuildId ? 'is-active' : ''} ${guild.installed ? 'is-installed' : 'needs-authorization'}">
+      <button class="guild-card-select" type="button" data-select-guild="${escapeHtml(guild.id)}">
         ${safeDiscordImageUrl(guild.icon) ? `<img src="${escapeHtml(safeDiscordImageUrl(guild.icon))}" alt="">` : '<span class="guild-fallback">S</span>'}
-        <span>
+        <span class="guild-card-copy">
           <strong>${escapeHtml(guild.name)}</strong>
-          <small>${guild.installed ? 'Bot installé' : 'Autorisation requise'}</small>
+          <small><span class="guild-status-dot" aria-hidden="true"></span>${guild.installed ? 'Bot installé' : 'Autorisation requise'}</small>
         </span>
       </button>
-      ${guild.installed ? '' : `<a class="button button-small" href="${escapeHtml(safeExternalUrl(guild.inviteUrl, ['discord.com']) || '#')}" target="_blank" rel="noopener">Autoriser</a>`}
+      ${guild.installed
+        ? `<span class="guild-card-ready">${guild.id === selectedGuildId ? 'Ouvert' : 'Gérer'}</span>`
+        : `<a class="button button-small guild-authorize-button" href="${escapeHtml(safeExternalUrl(guild.inviteUrl, ['discord.com']) || '#')}" target="_blank" rel="noopener">Autoriser</a>`}
     </article>
   `).join('');
 }

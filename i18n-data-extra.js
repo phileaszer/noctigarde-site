@@ -31,6 +31,7 @@ Object.assign(en, {
     'Si le dashboard web n’est pas disponible, tu peux quand même tout faire depuis Discord avec les commandes ci-dessous.': 'If the web dashboard is unavailable, you can still do everything from Discord with the commands below.',
     'Tu peux quand même installer, configurer et utiliser Noctigarde sans quitter Discord.': 'You can still install, configure, and use Noctigarde without leaving Discord.',
     'Connecte-toi avec Discord, choisis un serveur, autorise Noctigarde si besoin, puis exécute les actions directement sur le Discord sélectionné.': 'Log in with Discord, choose a server, authorize Noctigarde if needed, then run actions directly on the selected Discord server.',
+    'Sélectionne un serveur à gérer ou ajoute Noctigarde.': 'Select a server to manage or add Noctigarde.',
     'Journal des actions réalisées depuis le dashboard. Ce serveur affiche uniquement ses propres actions, avec date, utilisateur, cible et résultat.': 'Dashboard action log. This server only shows its own actions, with date, user, target, and result.',
     'Premium : création illimitée, modifications illimitées.': 'Premium: unlimited creation, unlimited edits.',
     'Gratuit :': 'Free:',
