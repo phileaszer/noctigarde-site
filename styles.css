@@ -11602,6 +11602,29 @@ h3,
 }
 
 /* Server tools refinement */
+:root[data-theme="sentinel"] .dashboard-server-button {
+  min-height: 42px;
+  padding: 10px 17px;
+  border: 1px solid rgba(23, 231, 255, 0.42);
+  border-radius: 4px;
+  background: linear-gradient(115deg, #45d9ed, #49ead7);
+  box-shadow: 0 8px 22px rgba(23, 231, 255, 0.11);
+  clip-path: none;
+}
+
+:root[data-theme="sentinel"] .dashboard-server-button:hover,
+:root[data-theme="sentinel"] .dashboard-server-button:focus-visible {
+  border-color: rgba(111, 255, 236, 0.8);
+  background: linear-gradient(115deg, #5fe7f5, #62f0de);
+  box-shadow: 0 10px 26px rgba(23, 231, 255, 0.17);
+  transform: translateY(-1px);
+}
+
+:root[data-theme="sentinel"] .dashboard-server-button:active {
+  box-shadow: 0 4px 12px rgba(23, 231, 255, 0.1);
+  transform: translateY(0);
+}
+
 :root[data-theme="sentinel"] .dashboard-control-panel > .workspace-tools {
   border-top-color: rgba(205, 232, 255, 0.08);
   background: rgba(5, 9, 15, 0.26);
