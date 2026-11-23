@@ -61,6 +61,33 @@
     return Number.isNaN(date.getTime()) ? 'Inconnue' : new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' }).format(date);
   }
 
+  function formatDevice(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return 'Appareil inconnu';
+
+    const browserMatchers = [
+      ['Edge', /Edg\/(\d+)/i],
+      ['Opera', /OPR\/(\d+)/i],
+      ['Firefox', /Firefox\/(\d+)/i],
+      ['Chrome', /Chrome\/(\d+)/i],
+      ['Safari', /Version\/(\d+).+Safari/i]
+    ];
+    const osMatchers = [
+      ['Windows', /Windows NT/i],
+      ['Android', /Android/i],
+      ['iPhone', /iPhone/i],
+      ['iPad', /iPad/i],
+      ['macOS', /Macintosh|Mac OS X/i],
+      ['Linux', /Linux/i]
+    ];
+    const browser = browserMatchers.find(([, pattern]) => pattern.test(raw));
+    const browserMatch = browser?.[1].exec(raw);
+    const os = osMatchers.find(([, pattern]) => pattern.test(raw));
+
+    if (!browser && !os) return raw.length > 72 ? `${raw.slice(0, 69)}...` : raw;
+    return [browser ? `${browser[0]}${browserMatch?.[1] ? ` ${browserMatch[1]}` : ''}` : 'Navigateur', os?.[0] || 'Appareil'].join(' · ');
+  }
+
   function renderSearchResults(results) {
     const host = document.querySelector('[data-workspace-search-results]');
     if (!host) return;
@@ -104,7 +131,7 @@
         </section>
         <section>
           <div class="workspace-section-heading"><div><strong>Sessions actives</strong><small>${sessions.length} appareil(s) connecté(s)</small></div><button type="button" class="button button-small button-ghost" data-revoke-other-sessions>Fermer les autres</button></div>
-          ${sessions.map(item => `<div class="workspace-history-row"><div><strong>${item.current ? 'Session actuelle' : 'Autre appareil'}</strong><small>${escapeHtml(item.device)} · ${escapeHtml(formatDate(item.createdAt))}</small></div>${item.current ? '<span class="status-badge is-ready">Ici</span>' : `<button type="button" class="button button-small button-ghost" data-revoke-session="${escapeHtml(item.id)}">Fermer</button>`}</div>`).join('')}
+          ${sessions.map(item => `<div class="workspace-history-row"><div><strong>${item.current ? 'Session actuelle' : 'Autre appareil'}</strong><small title="${escapeHtml(item.device)}">${escapeHtml(formatDevice(item.device))} · ${escapeHtml(formatDate(item.createdAt))}</small></div>${item.current ? '<span class="status-badge is-ready">Ici</span>' : `<button type="button" class="button button-small button-ghost" data-revoke-session="${escapeHtml(item.id)}">Fermer</button>`}</div>`).join('')}
         </section>
       </div>
     `;
@@ -156,6 +183,8 @@
     root.querySelectorAll('[data-workspace-view-panel]').forEach(panel => {
       panel.hidden = panel.dataset.workspaceViewPanel !== view;
     });
+    const body = root.querySelector('.workspace-dialog-body');
+    if (body) body.scrollTop = 0;
   }
 
   function renderTools() {
